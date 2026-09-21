@@ -362,6 +362,10 @@ def verify_watchtower_combat(page, click, *, retreat: bool) -> bool:
         "bandit_002",
     }
     assert started["state"]["elapsed_minutes"] >= before["elapsed_minutes"]
+    stats = started["state"]["effective_stats"]
+    expect(page.get_by_label("전투 실효 능력치", exact=True)).to_contain_text(
+        f"피해 1d{stats['damage_die']}+{stats['damage_bonus']}"
+    )
     page.reload()
     expect(page.get_by_test_id("battlefield")).to_contain_text("망루 매복 전투")
     assert current() == started
@@ -391,7 +395,10 @@ def verify_watchtower_combat(page, click, *, retreat: bool) -> bool:
                     click(feint)
                 enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == enemy_id)
                 click(f"공격: {enemy['name']}")
-                assert current()["latest_turn"]["event"]["payload"]["target_id"] == enemy_id
+                payload = current()["latest_turn"]["event"]["payload"]
+                assert payload["target_id"] == enemy_id
+                assert payload["damage_die"] == state["effective_stats"]["damage_die"]
+                assert payload["bonus"] == state["effective_stats"]["attack_bonus"]
                 continue
             move = None
             if combat["action_available"] and combat["movement_remaining"]:
@@ -432,6 +439,77 @@ def verify_watchtower_combat(page, click, *, retreat: bool) -> bool:
         click("망루 계단 보강 (10분)")
     print(f"망루 브라우저 실주사위 결과: {result}; 원정 선택으로 합류", flush=True)
     return won
+
+
+def verify_equipment(browser) -> None:
+    """Real purchases, explicit equip, skill totals and snapshot restoration; no state injection."""
+    for item, name, price, slot, total_ac, attack, damage_die, damage_bonus, stealth in [
+        ("heavy_blade", "중검", 16, "weapon", 17, 4, 10, 4, 5),
+        ("reinforced_armor", "강화 갑옷", 18, "armor", 19, 5, 8, 3, 3),
+        ("scout_armor", "정찰 갑옷", 14, "armor", 16, 5, 8, 3, 7),
+    ]:
+        context = browser.new_context(viewport={"width": 390, "height": 844})
+        page = context.new_page()
+        page.goto("http://127.0.0.1:3000")
+        send = page.get_by_role("button", name="행동 보내기", exact=True)
+        expect(send).to_be_enabled()
+
+        def click(label, *, page=page, send=send):
+            page.get_by_role("button", name=label, exact=True).click()
+            expect(send).to_be_enabled()
+
+        def current(*, page=page):
+            campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+            response = httpx.get(f"http://127.0.0.1:8000/api/campaign/{campaign_id}")
+            response.raise_for_status()
+            return response.json()
+
+        baseline = current()["state"]
+        click("시장으로 이동")
+        click(f"{name} 구매 ({price}골드)")
+        purchased = current()["state"]
+        assert item in purchased["equipment"]["owned"]
+        assert purchased["equipment"]["equipped"][slot] != item
+        assert purchased["resources"]["gold"] == 20 - price
+        assert purchased["effective_stats"] == baseline["effective_stats"]
+        expect(
+            page.get_by_role("button", name=f"{name} 구매 ({price}골드)", exact=True)
+        ).to_have_count(0)
+        click(f"장비 장착: {name}")
+        equipped = current()["state"]
+        assert equipped["effective_stats"] == {
+            "ac": total_ac,
+            "attack_bonus": attack,
+            "damage_die": damage_die,
+            "damage_bonus": damage_bonus,
+            "stealth_bonus": stealth,
+            "persuasion_bonus": 3,
+        }
+        assert equipped["player"] == baseline["player"]
+        assert equipped["inventory"] == baseline["inventory"]
+        expect(page.get_by_label("장착 장비", exact=True)).to_contain_text(name)
+        expect(page.get_by_label("실효 능력치", exact=True)).to_contain_text(f"AC {total_ac}")
+        click("세이브")
+        expect(page.get_by_text("세이브 완료", exact=False)).to_be_visible()
+        saved_snapshot = page.evaluate("localStorage.getItem('luna-realms-snapshot-id')")
+        click("장비 장착: 여행검" if slot == "weapon" else "장비 장착: 여행 갑옷")
+        assert current()["state"]["effective_stats"] == baseline["effective_stats"]
+        page.get_by_label("저장 선택", exact=False).select_option(saved_snapshot)
+        click("복원")
+        expect(page.get_by_label("장착 장비", exact=True)).to_contain_text(name)
+        assert current()["state"]["effective_stats"] == equipped["effective_stats"]
+        assert current()["state"]["resources"] == equipped["resources"]
+        page.reload()
+        expect(page.get_by_label("실효 능력치", exact=True)).to_contain_text(
+            f"피해 1d{damage_die}+{damage_bonus}"
+        )
+        assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+        if slot == "armor":
+            click("여관으로 이동")
+            page.get_by_label("행동", exact=True).fill("숨는다")
+            click("행동 보내기")
+            assert current()["latest_turn"]["dice"]["bonus"] == stealth
+        context.close()
 
 
 def wait_for(url: str, process: subprocess.Popen) -> None:
@@ -664,6 +742,15 @@ def main() -> None:
                         price = 6 if action == "하를란에게 봉인 반환" else 8 if exile else 10
                         click(f"치유 물약 구매 ({price}골드)")
                         expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 3")
+                        if action == "미라에게 봉인 전달":
+                            click("결투검 구매 (12골드)")
+                            click("장비 장착: 결투검")
+                            expect(page.get_by_label("실효 능력치", exact=True)).to_contain_text(
+                                "명중 +6"
+                            )
+                            expect(page.get_by_label("실효 능력치", exact=True)).to_contain_text(
+                                "피해 1d6+3"
+                            )
                         click("오렌과 대화")
                         page.reload()
                         expect(page.get_by_text("진행: 해결", exact=False)).to_be_visible()
@@ -818,12 +905,14 @@ def main() -> None:
                     assert not failures, failures
                     verify_defeat_recovery(browser)
                     verify_tactical_options(browser)
+                    verify_equipment(browser)
                     browser.close()
                 print(
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
                     "구조/문서/동시 확보·귀환 보고·레벨5 성장, "
                     "여관 이후 망루 전투와 후퇴의 원정 합류(실주사위 결과는 위 별도 기록), "
                     "원정 후 지원/미개입에 따른 수송·파벌 복구·시장 가격 변화와 재접속, "
+                    "장비 구매/교체·장비별 실효 판정·저장 복원과 모바일 표시, "
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "

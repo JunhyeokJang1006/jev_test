@@ -5,6 +5,7 @@ from typing import Any
 
 from . import (
     defeat,
+    equipment,
     expedition,
     followup,
     progression,
@@ -36,6 +37,7 @@ COMMANDS = {
     **defeat.COMMANDS,
     **followup.COMMANDS,
     **resources.COMMANDS,
+    **equipment.COMMANDS,
     **tactical.COMMANDS,
     **progression.COMMANDS,
     **world_effects.COMMANDS,
@@ -69,6 +71,7 @@ def prepare(state: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(state)
     initialize_knowledge(result)
     resources.initialize(result)
+    equipment.initialize(result)
     progression.initialize(result)
     result.setdefault(
         "quest",
@@ -106,6 +109,7 @@ def available_actions(state: dict[str, Any]) -> list[str]:
         ]
         if state.get("followup", {}).get("status") in {"active", "completed"}:
             actions.extend(resources.available_actions(state))
+            actions.extend(equipment.available_actions(state))
             location = LOCATIONS.get(state.get("location_id"), {})
             for label, (intent, target) in COMMANDS.items():
                 if (
@@ -125,6 +129,7 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     actions = [
         "주변 조사",
         *resources.available_actions(state),
+        *equipment.available_actions(state),
         *tactical.available_actions(state),
         *progression.available_actions(state),
     ]
@@ -157,6 +162,7 @@ def resolve_world(
 ) -> dict | None:
     followup_intents = {command[0] for command in followup.COMMANDS.values()}
     resource_intents = {command[0] for command in resources.COMMANDS.values()} | {"train"}
+    equipment_intents = {command[0] for command in equipment.COMMANDS.values()}
     expedition_intents = {command[0] for command in expedition.COMMANDS.values()}
     world_event_intents = {command[0] for command in world_events.COMMANDS.values()}
     if (
@@ -164,6 +170,7 @@ def resolve_world(
         not in {"travel", "talk", "investigate", "take_seal", "finish_quest", "wait_notice"}
         | followup_intents
         | resource_intents
+        | equipment_intents
         | expedition_intents
         | world_event_intents
     ):
@@ -201,6 +208,9 @@ def resolve_world(
             result, intent, targets, roller if roller is not None else Dice()
         )
         narrative, minutes = expedition_result["narrative"], expedition_result["minutes"]
+    elif intent in equipment_intents:
+        resource_result = equipment.apply(result, intent, targets)
+        narrative, minutes = resource_result["narrative"], resource_result["minutes"]
     elif intent in resource_intents:
         resource_result = (
             progression.apply(result, intent, targets)

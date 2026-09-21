@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Any
 
 from .dice import Roller
+from .equipment import effective_stats
 from .resources import DEFAULT as DEFAULT_RESOURCES
 from .resources import initialize as initialize_resources
 
@@ -252,7 +253,7 @@ def _enemy_response(state: dict, actor: dict, roller: Roller, *, defend: bool = 
         response["attacked"] = False
         return response
     roll = roller.roll(20)
-    ac = int(state["player"].get("ac", 17)) + (2 if defend else 0)
+    ac = effective_stats(state)["ac"] + (2 if defend else 0)
     hit = roll == 20 or (roll != 1 and roll + 4 >= ac)
     damage_rolls = [roller.roll(6) for _ in range(2 if roll == 20 else 1)] if hit else []
     damage = sum(damage_rolls) + 2 if hit else 0
@@ -428,10 +429,15 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
                 enemy["conditions"].remove("exposed")
                 payload["condition_consumed"] = "exposed"
             ac = int(enemy["ac"])
-            bonus = int(result["player"].get("attack_bonus", 5))
-            damage_bonus = int(result["player"].get("damage_bonus", 3))
+            stats = effective_stats(result)
+            bonus = stats["attack_bonus"]
+            damage_bonus = stats["damage_bonus"]
             hit = roll == 20 or (roll != 1 and roll + bonus >= ac)
-            damage_rolls = [roller.roll(8) for _ in range(2 if roll == 20 else 1)] if hit else []
+            damage_rolls = (
+                [roller.roll(stats["damage_die"]) for _ in range(2 if roll == 20 else 1)]
+                if hit
+                else []
+            )
             damage = max(0, sum(damage_rolls) + damage_bonus) if hit else 0
             enemy["hp"] = max(0, enemy["hp"] - damage)
             if all(actor["hp"] <= 0 for actor in combat["enemies"]):
@@ -446,6 +452,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
                 damage=damage,
                 damage_rolls=damage_rolls,
                 damage_bonus=damage_bonus,
+                damage_die=stats["damage_die"],
                 remaining_hp=enemy["hp"],
             )
             dice = {

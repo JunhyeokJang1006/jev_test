@@ -4,6 +4,7 @@ from typing import Any
 
 from . import resources
 from .dice import Roller
+from .equipment import effective_stats
 
 COMMANDS = {
     "후속 사건 시작": ("start_followup", "aftermath"),
@@ -115,7 +116,7 @@ def check(state: dict[str, Any], target: str, roller: Roller) -> tuple[str, int,
         raise ValueError("이미 시도했거나 현재 선택할 수 없는 판정입니다.")
     social = EVIDENCE[target][0] == "market"
     skill = "persuasion" if social else "stealth"
-    bonus = int(state["player"].get(f"{skill}_bonus", 3 if social else 5))
+    bonus = effective_stats(state)[f"{skill}_bonus"]
     roll = roller.roll(20)
     success = roll + bonus >= 14
     attempt = {"skill": skill, "roll": roll, "bonus": bonus, "dc": 14, "success": success}

@@ -9,6 +9,7 @@ from typing import Any
 
 from . import defeat, progression, tactical, world_effects, world_events
 from .dice import Dice, Roller
+from .equipment import effective_stats
 from .memory import record_episode
 from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
 
@@ -294,7 +295,7 @@ def _resolve_action(
         raise ValueError("은신 대상이 현재 장면과 일치하지 않습니다.")
     if state.get("combat", {}).get("active"):
         raise ValueError("현재 전투에서는 공격 행동을 선택해야 합니다.")
-    roll, bonus, dc = roller.roll(20), int(state["player"].get("stealth_bonus", 5)), 14
+    roll, bonus, dc = roller.roll(20), effective_stats(state)["stealth_bonus"], 14
     total = roll + bonus
     success = total >= dc
     next_state["hidden"] = success

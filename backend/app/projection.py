@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from .equipment import effective_stats, public_equipment
 from .expedition import public_expedition
 from .progression import public_progression
 from .resources import DEFAULT
@@ -37,6 +38,8 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["progression"] = public_progression(state)
+    result["equipment"] = public_equipment(state)
+    result["effective_stats"] = effective_stats(state)
     result.update(public_world(state))
     if "encounter_history" in state:
         result["encounter_history"] = {
@@ -111,7 +114,7 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
     result = pick(
         payload,
         "intent target_id enemy_id skill dc roll bonus success ac damage hit "
-        "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending "
+        "remaining_hp critical damage_bonus damage_die rule_id result resolved clue minutes ending "
         "healing cost gold_spent supplies_spent reward_gold moved attacked "
         "xp_gained level choice world_notice stood_up",
     )

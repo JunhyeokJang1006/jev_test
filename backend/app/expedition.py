@@ -3,6 +3,7 @@
 from typing import Any
 
 from .dice import Roller
+from .equipment import effective_stats
 
 COMMANDS = {
     "꺼진 망루의 전령 의뢰 수락": ("start_expedition", "watchtower"),
@@ -199,11 +200,7 @@ def apply(state: dict[str, Any], intent: str, targets: tuple[str, ...], roller: 
             field = "passage" if passage else "approach"
             success = True
             if target in {"persuasion", "stealth"}:
-                bonus = int(
-                    state.get("player", {}).get(
-                        f"{target}_bonus", 3 if target == "persuasion" else 5
-                    )
-                )
+                bonus = effective_stats(state)[f"{target}_bonus"]
                 if passage and (target, quest["aid"]) in {
                     ("persuasion", "merchant_introduction"),
                     ("stealth", "refugee_route"),
