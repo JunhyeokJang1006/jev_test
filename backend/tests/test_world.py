@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from app import ai
+from app import ai, api
+from app.game import ActionProposal
 from app.storage import connect, read_campaign
 
 from .helpers import request
@@ -24,7 +25,7 @@ def campaign(monkeypatch, tmp_path):
     return request("POST", "/api/campaign", json={}).json()
 
 
-def turn(campaign, action):
+def turn(campaign, action, **extra):
     response = request(
         "POST",
         "/api/game/turn",
@@ -32,6 +33,7 @@ def turn(campaign, action):
             "campaign_id": campaign["id"],
             "expected_state_version": campaign["state_version"],
             "input": action,
+            **extra,
         },
     )
     if response.status_code == 200:
@@ -68,7 +70,10 @@ def test_complete_each_ending_and_restore_before_choice(campaign, ending, action
     assert turn(campaign, "시장으로 이동").status_code == 200
     if ending != "exile":
         assert turn(campaign, "여관으로 이동").status_code == 200
-    assert turn(campaign, action).status_code == 200
+    preview = turn(campaign, action)
+    assert preview.status_code == 409
+    assert preview.json()["detail"]["code"] == "ending_confirmation_required"
+    assert turn(campaign, action, confirmed_ending=ending).status_code == 200
     assert campaign["state"]["quest"]["ending"] == ending
     assert campaign["state"]["quest"]["status"] == "completed"
     assert campaign["actions"] == []
@@ -138,3 +143,50 @@ def test_free_language_interpreter_commits_world_transition(campaign, monkeypatc
     fetched = request("GET", f"/api/campaign/{campaign['id']}").json()
     assert fetched["state"]["location_id"] == "market"
     assert "오렌과 대화" in fetched["actions"]
+
+
+def test_model_cannot_end_quest_without_player_confirmation(campaign, monkeypatch):
+    recover(campaign)
+    turn(campaign, "시장으로 이동")
+    before = request("GET", f"/api/campaign/{campaign['id']}").json()
+    connection = connect()
+    count = connection.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+    connection.close()
+    monkeypatch.setattr(
+        api,
+        "interpret_action",
+        lambda *_: (ActionProposal("finish_quest", "exploration", ("exile",), None, None), "luna"),
+    )
+    for _ in range(2):
+        preview = turn(campaign, "도시를 떠나는 게 좋을지 고민만 한다")
+        assert preview.status_code == 409
+        assert preview.json()["detail"]["ending"] == "exile"
+    assert request("GET", f"/api/campaign/{campaign['id']}").json() == before
+    connection = connect()
+    assert connection.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == count
+    connection.close()
+
+
+def test_ending_confirmation_is_bound_to_command_version_and_request(campaign):
+    recover(campaign)
+    turn(campaign, "시장으로 이동")
+    preview_version = campaign["state_version"]
+    assert turn(campaign, "봉인을 가지고 도시 떠나기").status_code == 409
+    assert turn(campaign, "주변 조사", confirmed_ending="exile").status_code == 422
+    assert turn(campaign, "봉인을 가지고 도시 떠나기", confirmed_ending="law").status_code == 422
+    turn(campaign, "주변 조사")
+    payload = {
+        "campaign_id": campaign["id"],
+        "request_id": "00000000-0000-4000-8000-000000000099",
+        "input": "봉인을 가지고 도시 떠나기",
+        "confirmed_ending": "exile",
+        "expected_state_version": preview_version,
+    }
+    assert request("POST", "/api/game/turn", json=payload).status_code == 409
+    payload["expected_state_version"] = campaign["state_version"]
+    first = request("POST", "/api/game/turn", json=payload)
+    assert first.status_code == 200
+    assert first.json()["state"]["quest"]["ending"] == "exile"
+    assert request("POST", "/api/game/turn", json=payload).json() == first.json()
+    del payload["confirmed_ending"]
+    assert request("POST", "/api/game/turn", json=payload).status_code == 409

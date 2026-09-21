@@ -147,6 +147,12 @@ def main() -> None:
                         if action != "봉인을 가지고 도시 떠나기":
                             click("여관으로 이동")
                         click(action)
+                        expect(page.get_by_role("alert", name="결말 선택 확인")).to_be_visible()
+                        expect(page.get_by_text("소지품: 왕실 봉인", exact=True)).to_be_visible()
+                        click("선택 취소")
+                        expect(page.get_by_role("alert", name="결말 선택 확인")).to_have_count(0)
+                        click(action)
+                        click("결말 확정")
                         expect(page.get_by_text(title, exact=True)).to_be_visible()
                         page.reload()
                         expect(page.get_by_text(title, exact=True)).to_be_visible()

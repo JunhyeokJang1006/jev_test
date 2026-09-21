@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 79 passed. 기존 플레이 검사와 Alembic 전환·snapshot 무결성 및 저장 목록 페이지/입력 범위/메타데이터 계약 확인 |
+| API/AI 테스트 | PASS | pytest 81 passed. 기존 플레이·저장 검사와 결말 확인 전 무변경, 확인 명령/버전/멱등성 계약 확인 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -33,8 +33,8 @@ pending 서사 자동 회복과 UI 재조회는 미완성으로 추적한다.
 수정 후 관련 테스트 10개를 재확인했다. Chrome 자동화는 루트가 별도로 실행해 통과했다.
 
 자유문장 context 확장: Sol 읽기 전용 검증에서 mock 전체 52개 통과, 추가 차단 없음.
-이번 변경에서는 실제 공급자 호출을 하지 않았다. 현재 노출된 결말 명령에 대한 모델의 의도 오분류는
-프롬프트만으로 완전히 막을 수 없으며, 명시적 결말 확인 흐름은 후속 보강 대상이다.
+이 변경에서는 실제 공급자 호출을 하지 않았다. 모델 의도 오분류를 프롬프트로 완전히 막을 수 없으므로
+결말에는 후속 구현한 명시적 확인 계약을 적용한다. 제안만으로는 상태가 바뀌지 않는다.
 
 공개 응답 경계: Sol이 생성/조회/복원, 중복 턴 두 경로, 서사 저장 실패와 정상 완료의
 projection 적용을 독립 확인했다. 임시 DB에서 내부 truth·NPC 기억 보존과 API 응답 제외를
@@ -58,6 +58,12 @@ Alembic/세이브 검증: Astra가 관련 테스트 42개와 4개 프로세스 �
 저장 목록: 메타데이터 페이지 목록과 선택 복원 구현. Chrome에서 두 저장본 선택,
 localStorage 초기화 후 서버 저장 복구, 초기 캠페인 응답 지연 중 복원 비활성화 확인.
 Astra 검토에서 발견한 초기화/복원 경합과 SQLite offset 정수 초과 오류를 수정했다.
+
+결말 확인: Chrome에서 세 결말 각각 제안→취소→재선택→확정을 검증했다.
+모델이 자유 문장을 결말로 오분류해도 DB가 바뀌지 않는 회귀, 확인값/명령 불일치,
+오래된 버전과 멱등 키 재사용 거부, 확정 재전송 시 동일 결과를 검사했다.
+Astra 독립 검토에서 관련 13개 테스트 통과, canonical 명령·transaction gate·UI 결속을 확인했다.
+GitHub 최초 커밋의 project-check 실행은 success로 확인했다.
 
 첫 검사에서 ruff의 app 모듈 분류를 명시하도록 수정했다.
 TestClient 경로의 의존성 deprecation 경고는 httpx ASGITransport 기반 테스트로 변경하여 해소했다.

@@ -7,6 +7,14 @@ Pydantic schema→OpenAPI→TypeScript 생성을 단일 기준으로 삼는다.
 
 ## 현재 턴 저장과 서사 상태
 
+결말 선택은 별도 확인 계약을 적용한다. 가능한 `finish_quest` 제안은
+HTTP 409의 `detail.code=ending_confirmation_required`와 공개 command/ending/consequence를 반환한다.
+이 단계는 turn/event/state를 저장하지 않는다. 사용자가 확인하면 canonical command와
+`confirmed_ending`(law/mercy/exile), 원래 campaign_id/expected_state_version을 전송한다.
+명령/확인값 불일치는 422, 사이에 상태가 바뀐 요청은 409로 거부한다.
+확인값은 멱등 해시에 포함되며 취소는 서버 상태를 바꾸지 않는다.
+현재 엔진의 결말 종료 정책에 대한 안전장치이며, 후속 퀘스트 구현을 대체하지 않는다.
+
 규칙 판정·event·state를 한 transaction으로 commit한 후 서사를 생성한다.
 commit 시점에는 기본 문장과 `narrative_status=pending`이 저장되고,
 완료 후 `completed`, 공급자 실패 후 `failed`와 안전한 기본 문장을 저장한다.

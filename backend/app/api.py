@@ -6,7 +6,7 @@ import json
 import sqlite3
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
@@ -16,7 +16,7 @@ from .ai import interpret_action, jev_route, with_narration
 from .game import resolve_action
 from .projection import public_state, public_turn
 from .storage import connect, json_hash, migrate, read_campaign
-from .world import available_actions, prepare
+from .world import COMMANDS, available_actions, prepare
 
 router = APIRouter(prefix="/api")
 
@@ -32,6 +32,7 @@ class TurnRequest(BaseModel):
     request_id: UUID = Field(default_factory=uuid.uuid4)
     expected_state_version: int = Field(ge=0)
     input: str = Field(min_length=1, max_length=4000)
+    confirmed_ending: Literal["law", "mercy", "exile"] | None = None
 
 
 class LoadRequest(BaseModel):
@@ -257,13 +258,16 @@ def load_campaign(campaign_id: str, request: LoadRequest) -> dict[str, Any]:
 @router.post("/game/turn")
 def play_turn(request: TurnRequest) -> dict[str, Any]:
     request_id = str(request.request_id)
-    request_hash = json_hash(
-        {
-            "campaign_id": request.campaign_id,
-            "input": request.input,
-            "expected_state_version": request.expected_state_version,
-        }
-    )
+    request_body = {
+        "campaign_id": request.campaign_id,
+        "input": request.input,
+        "expected_state_version": request.expected_state_version,
+    }
+    if request.confirmed_ending is not None:
+        request_body["confirmed_ending"] = request.confirmed_ending
+        if COMMANDS.get(request.input.strip()) != ("finish_quest", request.confirmed_ending):
+            raise HTTPException(422, "ending_confirmation_mismatch")
+    request_hash = json_hash(request_body)
     connection = connect()
     turn_id = str(uuid.uuid4())
     try:
@@ -299,6 +303,37 @@ def play_turn(request: TurnRequest) -> dict[str, Any]:
             return public_turn(json.loads(existing["outcome_json"]))
         if campaign["state_version"] != request.expected_state_version:
             raise HTTPException(409, "stale_state_version")
+        if proposal.intent == "finish_quest":
+            command = (
+                next(
+                    (
+                        label
+                        for label in available_actions(campaign["state"])
+                        if COMMANDS.get(label) == ("finish_quest", proposal.target_ids[0])
+                    ),
+                    None,
+                )
+                if len(proposal.target_ids) == 1
+                else None
+            )
+            if command is None:
+                raise HTTPException(422, "ending_not_available")
+            if request.confirmed_ending != proposal.target_ids[0]:
+                consequences = {
+                    "law": "봉인을 하를란에게 넘기고 경비대의 신뢰를 얻습니다.",
+                    "mercy": "봉인을 미라에게 넘기고 그녀의 약속을 믿기로 합니다.",
+                    "exile": "봉인을 소지한 채 도시를 떠납니다.",
+                }
+                raise HTTPException(
+                    409,
+                    {
+                        "code": "ending_confirmation_required",
+                        "ending": proposal.target_ids[0],
+                        "command": command,
+                        "consequence": consequences[proposal.target_ids[0]]
+                        + " 현재 모험은 종료됩니다. 다른 선택은 이전 저장에서 진행할 수 있습니다.",
+                    },
+                )
         try:
             resolved = resolve_action(campaign["state"], proposal)
         except ValueError as error:

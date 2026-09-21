@@ -6,6 +6,7 @@ import PixelScene from "./pixel-scene";
 type Campaign = { id: string; name: string; state_version: number; state: Record<string, any>; latest_turn?: Turn | null; actions?: string[] };
 type Turn = { turn_id: string; state_version: number; narrative: string; dice: Record<string, any>; event: { type: string; payload: Record<string, any> }; state: Record<string, any> };
 type Save = { snapshot_id: string; campaign_id: string; campaign_name: string; state_version: number; created_at: string };
+type EndingChoice = { ending: "law" | "mercy" | "exile"; command: string; consequence: string; campaignId: string; version: number };
 
 const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 
@@ -19,6 +20,7 @@ export default function CampaignPanel() {
   const [starting, setStarting] = useState(true);
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
+  const [endingChoice, setEndingChoice] = useState<EndingChoice | null>(null);
   const [saves, setSaves] = useState<Save[]>([]);
   const [selectedSave, setSelectedSave] = useState("");
   const [saveTotal, setSaveTotal] = useState(0);
@@ -66,15 +68,21 @@ export default function CampaignPanel() {
     })();
   }, []);
 
-  async function sendTurn(action = input) {
+  async function sendTurn(action = input, confirmation?: EndingChoice) {
     if (!campaign || pending.current || !action.trim()) return;
+    if (confirmation && confirmation.campaignId !== campaign.id) { setEndingChoice(null); return; }
     pending.current = true;
+    setEndingChoice(null);
     setBusy(true); setError("");
     try {
       const requestId = crypto.randomUUID();
-      const response = await fetch(`${apiBase}/api/game/turn`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campaign_id: campaign.id, request_id: requestId, expected_state_version: campaign.state_version, input: action }) });
+      const response = await fetch(`${apiBase}/api/game/turn`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campaign_id: campaign.id, request_id: requestId, expected_state_version: confirmation?.version ?? campaign.state_version, input: action, ...(confirmation ? { confirmed_ending: confirmation.ending } : {}) }) });
       const body = await response.json();
       if (!response.ok) {
+        if (response.status === 409 && body.detail?.code === "ending_confirmation_required") {
+          setEndingChoice({ ...body.detail, campaignId: campaign.id, version: campaign.state_version });
+          return;
+        }
         if (response.status === 409) {
           const refreshed = await fetch(`${apiBase}/api/campaign/${campaign.id}`);
           if (refreshed.ok) {
@@ -117,6 +125,7 @@ export default function CampaignPanel() {
     const restored = await response.json();
     window.localStorage.setItem("luna-realms-campaign-id", restored.id);
     setCampaign(restored);
+    setEndingChoice(null);
     setError("");
     setNarrative("저장된 캠페인을 복원했습니다.");
     setSaveMessage("복원 완료");
@@ -138,6 +147,13 @@ export default function CampaignPanel() {
     <nav aria-label="가능한 행동">{campaign?.actions?.map(action => <button className="secondary" key={action} type="button" disabled={busy} onClick={() => void sendTurn(action)}>{action}</button>)}</nav>
     <label htmlFor="action">행동</label><textarea id="action" value={input} onChange={(event) => setInput(event.target.value)} disabled={!campaign || busy} />
     <button type="button" onClick={() => void sendTurn()} disabled={!campaign || busy}>{busy ? "판정 중…" : "행동 보내기"}</button>
+    {endingChoice && <section aria-label="결말 선택 확인" role="alert">
+      <h3>{endingChoice.command} — 이 선택을 확정할까요?</h3>
+      <p>{endingChoice.consequence}</p>
+      <p>확정 전에는 상태가 바뀌지 않습니다. 필요하면 먼저 세이브하세요.</p>
+      <button type="button" disabled={busy} onClick={() => void sendTurn(endingChoice.command, endingChoice)}>결말 확정</button>
+      <button className="secondary" type="button" disabled={busy} onClick={() => setEndingChoice(null)}>선택 취소</button>
+    </section>}
     <button className="secondary" type="button" onClick={() => void saveCampaign()} disabled={!campaign || busy || listBusy}>세이브</button>
     <label htmlFor="save-slot">저장 선택 ({saveTotal})</label>
     <select id="save-slot" style={{ width: "100%", minWidth: 0 }} value={selectedSave} onChange={event => setSelectedSave(event.target.value)} disabled={busy || listBusy || !saves.length}>
