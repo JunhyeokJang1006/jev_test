@@ -58,6 +58,10 @@ def test_mock_never_reads_provider_configuration_or_calls_http(monkeypatch):
         {"limit": 0},
         {"limit": 1000},
         {"provider": "auto"},
+        {"offset": -1},
+        {"offset": 26},
+        {"offset": True},
+        {"offset": 25, "limit": 2},
     ],
 )
 def test_invalid_options_never_discover_providers(monkeypatch, kwargs):
@@ -143,3 +147,21 @@ def test_cli_live_gate_and_mock_json(monkeypatch, capsys):
     assert module.main(["--limit", "1"]) == 1
     report = json.loads(capsys.readouterr().out)
     assert report["mode"] == "mock" and report["totals"]["attempted"] == 1
+
+
+def test_offset_only_evaluates_remaining_cases_without_repeating(monkeypatch):
+    seen = []
+
+    def interpret(text, state):
+        seen.append(text)
+        return ActionProposal("describe_action", "exploration", (), None, None), "mock"
+
+    monkeypatch.setattr(ai, "interpret_action", interpret)
+    report = evaluation.evaluate(offset=12)
+    assert seen == [case.text for case in evaluation.CORPUS[12:]]
+    assert report["selection"] == {"offset": 12, "count": 14}
+    assert report["complete"] is False
+    assert report["totals"]["call_count"] == 0
+    last = evaluation.evaluate(offset=25, limit=1)
+    assert last["cases"][0]["id"] == evaluation.CORPUS[-1].id
+    assert not last["complete"]

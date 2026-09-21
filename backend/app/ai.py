@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .ai_metrics import add_usage, tracked_call
 from .context import scene_context
-from .game import ActionProposal, TurnOutcome, interpret_mock
+from .game import ActionProposal, TurnOutcome, interpret_mock, noncommitting_input
 from .memory import actor_context
 from .projection import public_payload
 from .world import COMMANDS
@@ -183,6 +183,8 @@ def interpret_action(text: str, state: dict[str, Any] | None = None) -> tuple[Ac
                 value.skill,
                 value.difficulty_band,
             )
+            if proposal.intent != "describe_action" and noncommitting_input(text, proposal.intent):
+                raise ValueError("player_did_not_commit_to_action")
             if state is not None and proposal.intent in {item[0] for item in COMMANDS.values()}:
                 allowed = {
                     (command["intent"], (command["target_id"],))

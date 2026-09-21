@@ -31,6 +31,37 @@ class TurnOutcome:
     dice: dict[str, int | str]
 
 
+def noncommitting_input(text: str, intent: str | None = None) -> bool:
+    """Recognize explicit non-execution endings, not general natural-language intent.
+
+    Anchoring avoids treating an NPC quotation followed by '전한다' as a refusal.
+    This guard is deliberately not a claim of complete semantic validation.
+    """
+    # A rejected action in a mixed clause must not override its positive alternative.
+    unquoted = re.sub(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”", "", text)
+    rejected_verb = {
+        "basic_attack": r"공격",
+        "hide_beside_door": r"(?:숨|은신|잠입)",
+        "combat_defend": r"방어",
+        "combat_feint": r"교란",
+        "combat_dash": r"질주",
+    }.get(intent)
+    if rejected_verb and re.search(
+        rejected_verb + r"(?:을|를|은|도)?\s*하?지\s*(?:않|말|마)", unquoted
+    ):
+        return True
+    return (
+        re.search(
+            r"(?:지\s*(?:않는다|않겠다|말자|마(?:세요)?)|"
+            r"(?:실행|행동|공격|은신)(?:은|을)?\s*(?:취소|금지)(?:해|한다)?|"
+            r"(?:가능\s*여부|방법|결과)(?:만|를|만을)?\s*(?:질문한다|설명해\s*줘)|"
+            r"(?:할까|을까|될까|가능한가))\s*[.?!]*$",
+            text.strip().lower(),
+        )
+        is not None
+    )
+
+
 def interpret_mock(text: str) -> ActionProposal:
     normalized = text.strip().lower()
     command = next(
@@ -39,8 +70,18 @@ def interpret_mock(text: str) -> ActionProposal:
     if command is not None:
         intent, target = command
         return ActionProposal(intent, "exploration", (target,), None, None)
-    stealth_words = ("숨", "잠입", "은신", "그림자", "몰래")
-    if any(word in normalized for word in stealth_words):
+    if noncommitting_input(normalized):
+        return ActionProposal("describe_action", "exploration", (), None, None)
+    # Negation, questions and mentions of shadows are not consent to roll stealth.
+    # Complex free language belongs to the model; fallback accepts whole declarations.
+    hiding = re.fullmatch(
+        r"(?:나는\s+)?(?:여관\s+)?(?:문\s*옆(?:에)?\s*)?(?:그림자에\s*)?"
+        r"(?:(?:몸을\s+)?숨(?:는다|긴다|겠다|을게)|"
+        r"숨어(?:서)?\s+(?:경비병이\s+지나가기를\s+)?기다린다|"
+        r"은신(?:한다|하겠다|해\s+기다린다))[.!]?",
+        normalized,
+    )
+    if hiding:
         return ActionProposal(
             "hide_beside_door", "exploration", ("door_inn",), "stealth", "moderate"
         )

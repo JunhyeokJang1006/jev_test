@@ -167,6 +167,7 @@ def evaluate(
     live: bool = False,
     max_calls: int | None = None,
     limit: int | None = None,
+    offset: int = 0,
     provider: str = "luna",
 ) -> dict[str, Any]:
     if provider not in {"luna", "deepseek"}:
@@ -175,9 +176,11 @@ def evaluate(
         raise ValueError("live에는 1~100의 max_calls가 필요합니다")
     if not live and max_calls is not None:
         raise ValueError("max_calls에는 live가 필요합니다")
-    if limit is not None and (type(limit) is not int or not 1 <= limit <= len(CORPUS)):
+    if type(offset) is not int or not 0 <= offset < len(CORPUS):
+        raise ValueError("offset 범위 오류")
+    if limit is not None and (type(limit) is not int or not 1 <= limit <= len(CORPUS) - offset):
         raise ValueError("limit 범위 오류")
-    selected = CORPUS[:limit]
+    selected = CORPUS[offset : offset + limit if limit is not None else None]
     # mock은 원래 _provider_config를 호출하지 않는다. live는 선택 공급자만 허용한다.
     providers = [item for item in ai._provider_config() if item[0] == provider] if live else []
     rows = []
@@ -248,6 +251,7 @@ def evaluate(
         "mode": "live" if live else "mock",
         "provider": provider if live else None,
         "corpus_size": len(CORPUS),
+        "selection": {"offset": offset, "count": len(rows)},
         "complete": len(rows) == len(CORPUS),
         "passed": all(row["correct"] for row in rows) and (not live or len(evaluated) == len(rows)),
         "cases": rows,

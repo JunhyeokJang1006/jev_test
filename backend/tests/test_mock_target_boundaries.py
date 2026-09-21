@@ -1,6 +1,8 @@
+import json
+
 import pytest
 
-from app import api
+from app import ai, api
 from app.dice import Dice
 from app.game import interpret_mock
 
@@ -59,3 +61,126 @@ def test_fallback_mixed_target_never_starts_combat_or_rolls(monkeypatch):
     assert response.status_code == 200
     assert "combat" not in response.json()["state"]
     assert response.json()["state"]["player"]["hp"] == campaign["state"]["player"]["hp"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "숨지 않는다",
+        "숨을까?",
+        "은신하지 말자",
+        "그림자가 보이는지 질문한다",
+        "몰래 들어갈 수 있는지 설명해 줘",
+        "잠입은 하지 않고 기다리겠다",
+        "숨는다. 아니 취소해",
+        "미라가 숨는 모습을 관찰한다",
+    ],
+)
+def test_stealth_mention_does_not_imply_action(text):
+    assert interpret_mock(text).intent == "describe_action"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "숨는다",
+        "문 옆에 숨는다",
+        "여관 문 옆에 몸을 숨긴다.",
+        "문 옆 그림자에 은신해 기다린다.",
+        "나는 문 옆 그림자에 숨어 경비병이 지나가기를 기다린다.",
+    ],
+)
+def test_explicit_stealth_declarations_remain_supported(text):
+    proposal = interpret_mock(text)
+    assert proposal.intent == "hide_beside_door" and proposal.target_ids == ("door_inn",)
+
+
+@pytest.mark.parametrize("text", ["숨지 않는다", "숨을까?", "그림자가 보이는지 질문한다"])
+def test_stealth_question_or_refusal_does_not_roll_or_hide(monkeypatch, text):
+    campaign = request("POST", "/api/campaign", json={}).json()
+
+    def unexpected(*args):
+        raise AssertionError("non-action must not roll")
+
+    monkeypatch.setattr(Dice, "roll", unexpected)
+    response = request(
+        "POST",
+        "/api/game/turn",
+        json={
+            "campaign_id": campaign["id"],
+            "expected_state_version": 0,
+            "input": text,
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["event"]["type"] == "PLAYER_ACTION_RECORDED"
+    assert result["event"]["payload"]["resolved"] is False
+    assert result["state"]["hidden"] is False
+    assert result["state"]["elapsed_minutes"] == campaign["state"]["elapsed_minutes"]
+    assert result["state"]["resources"] == campaign["state"]["resources"]
+
+
+@pytest.mark.parametrize(
+    "text", ["숨지 않는다", "숨을까?", "가능 여부만 질문한다", "아직 실행하지 마."]
+)
+@pytest.mark.parametrize(
+    "intent,target",
+    [("hide_beside_door", "door_inn"), ("basic_attack", "goblin_001"), ("recover", "potion")],
+)
+def test_model_proposal_cannot_override_explicit_non_execution(monkeypatch, text, intent, target):
+    monkeypatch.setattr(ai, "_provider_config", lambda: [("luna", "", "", "")])
+    monkeypatch.setattr(
+        ai,
+        "_chat",
+        lambda *a, **k: (
+            "luna",
+            json.dumps({"intent": intent, "target_ids": [target], "action_type": "exploration"}),
+        ),
+    )
+    proposal, provider = ai.interpret_action(text)
+    assert proposal.intent == "describe_action" and proposal.target_ids == ()
+    assert provider == "mock"
+
+
+def test_quoted_refusal_does_not_block_explicit_talk_request(monkeypatch):
+    monkeypatch.setattr(ai, "_provider_config", lambda: [("luna", "", "", "")])
+    monkeypatch.setattr(
+        ai,
+        "_chat",
+        lambda *a, **k: (
+            "luna",
+            json.dumps(
+                {"intent": "talk", "target_ids": ["npc_harlan"], "action_type": "exploration"}
+            ),
+        ),
+    )
+    proposal, provider = ai.interpret_action("하를란에게 '숨지 말자'고 전한다")
+    assert proposal.intent == "talk" and provider == "luna"
+
+
+@pytest.mark.parametrize(
+    "text,intent,target,expected_provider",
+    [
+        ("고블린은 공격하지 않고 방어한다", "basic_attack", "goblin_001", "mock"),
+        ("공격하지 말고 가능한지 알려줘", "basic_attack", "goblin_001", "mock"),
+        ("숨지 않고 방어한다", "hide_beside_door", "door_inn", "mock"),
+        ("고블린은 공격하지 않고 방어한다", "combat_defend", "player", "luna"),
+        ("하를란에게 '공격하지 말자'고 전한다", "talk", "npc_harlan", "luna"),
+    ],
+)
+def test_negative_clause_is_checked_against_proposed_action(
+    monkeypatch, text, intent, target, expected_provider
+):
+    monkeypatch.setattr(ai, "_provider_config", lambda: [("luna", "", "", "")])
+    monkeypatch.setattr(
+        ai,
+        "_chat",
+        lambda *a, **k: (
+            "luna",
+            json.dumps({"intent": intent, "target_ids": [target], "action_type": "exploration"}),
+        ),
+    )
+    proposal, provider = ai.interpret_action(text)
+    assert provider == expected_provider
+    assert proposal.intent == ("describe_action" if provider == "mock" else intent)

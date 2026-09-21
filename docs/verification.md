@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 357 passed. 기존 회귀와 호출 계측·상한·평가 채점·공격 fallback의 대상 경계 포함 |
+| API/AI 테스트 | PASS | pytest 396 passed. 기존 회귀와 분할 평가·은신 비실행 표현·모델 부정절 경계 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -204,6 +204,26 @@ mock은26개 중14개 정답으로 평가 실패이며 실모델 coverage0이다
 Sol 읽기 전용 관련63개 검사 PASS, 차단 없음. 실제 유료 호출은 루트만 수행했다.
 전체357개·Ruff/TypeScript/build와 기존 Chrome 모험·전술·패배·복구 회귀를 재실행 통과했다.
 
+## 나머지 자유 입력 평가와 비실행 의도 경계
+
+2026-09-21: offset12부터14개를 실제 Luna로 평가하여 모두 기대 명령과 일치했다.
+[두 번째 계측 기록](evaluation-2026-09-21-remaining.json)의 HTTP14회/fallback0,
+입력13,966/출력1,291토큰, p50 1.519초/p95 2.287초를 확인했다. 두 보고서의 ID가
+중복 없이 기존26개 corpus를 덮고 토큰 합계가 일치하는지도 검사했다. 고정 소표본의
+두 배치 결과이며 일반 정확도95% 또는 실제 장시간 모험 완료 증거는 아니다.
+
+읽기 전용 조사에서 mock의 `숨지 않는다`/`숨을까?`가 실제 은신 판정을 일으키는 결함을
+재현하여, 전체 수행형 입력만 fallback으로 수용하도록 수정했다. 모델의 명백한 비실행
+종결 표현·해당 제안 동사의 부정절도 거부한다. 부정된 공격 대신 긍정적 방어를 요청한
+혼합문과 NPC 인용 대화를 구분하는 회귀를 포함한다. API 검사에서 부정·질문은 RNG,
+은신, 시간, 자원을 바꾸지 않고 미판정 입력 기록만 남긴다. 모든 한국어 의미를 판별하는
+검사가 아니며 복합 대조/교정절 등은 후속 평가가 필요하다.
+
+전체396개·Ruff/TypeScript/build PASS, Sol 독립 관련65개 PASS. 두 번째 유료 평가도
+이 방어 수정 이전에 실행했다. 수정 후 실제 모델 재호출은 하지 않았으며 HTTP stub과
+결정적/API 회귀로 방어를 검증했다.
+기존 Chrome 세 갈래 모험·전술·패배 회복·저장/서사/전송 복구도 재실행 통과했다.
+
 ## 미실행·미구현
 
 - Chrome 브라우저 자동화: 세 결말 실제 버튼 완주·새로고침·같은 저장 3회 복원·390px 폭 넘침 없음·JS 오류 없음 확인. 접근성 전체/시각 품질/30분 플레이 평가는 아직 미실행이다.
@@ -211,7 +231,7 @@ Sol 읽기 전용 관련63개 검사 PASS, 차단 없음. 실제 유료 호출�
 - GPT-5.6 Luna/JEV 유료 품질 평가: smoke는 통과했으며 장시간 품질 평가는 별도 실행. API 호출은 비용이 발생할 수 있어 자동화 테스트에서 mock으로 격리한다.
 - 공급자 설정: OpenAI GPT-5.6 Luna를 우선 사용하고 DeepSeek/mock으로 fallback한다. 자동화 테스트는 비용 방지를 위해 GM_PROVIDER=mock으로 격리한다.
 - Phaser 탐험 지도·NPC/출구 클릭: Chrome 데스크톱·모바일 클릭 검사 통과. Tiled/전술 이동·SRD/게임 에셋 반입·30분 플레이·100개 회귀는 후속 구현/검증이다.
-- GitHub Actions: 직전 `986ab63`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
+- GitHub Actions: 직전 `57c716b`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
 
 판정: 현재 머신에서 P0~P3 mock vertical slice와 상세 계획 준비 완료.
 전체 게임은 미완성이다. [완료 추적표](completion-tracker.md)의 규칙·모험·지도·기억·장시간 플레이 검증을 계속 진행한다.

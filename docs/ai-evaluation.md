@@ -13,9 +13,10 @@ uv run --locked python scripts/evaluate_ai.py
 ```bash
 uv run --locked python scripts/evaluate_ai.py --live --provider luna --max-calls 3 --limit 3
 uv run --locked python scripts/evaluate_ai.py --live --provider deepseek --max-calls 26
+GM_PROVIDER=luna uv run --locked python scripts/evaluate_ai.py --live --offset 12 --limit 14 --max-calls 14
 ```
 
-`--max-calls`는 live 필수이고 1~100이다. HTTP 직전 전체 호출 수를 제한한다. 예산 소진·미설정·실패로 mock이 반환된 사례도 전체 정확도에 포함되지만 실모델 평가 수와 공급자 정확도에는 포함되지 않는다. `--limit`은 1~26이며 생략하면 전체 corpus를 평가한다. 일부 사례만 선택한 결과는 `complete: false`로 표시한다.
+`--max-calls`는 live 필수이고 1~100이다. HTTP 직전 전체 호출 수를 제한한다. 예산 소진·미설정·실패로 mock이 반환된 사례도 전체 정확도에 포함되지만 실모델 평가 수와 공급자 정확도에는 포함되지 않는다. `--offset`은 0~25이며 기본0이다. `--limit`은 시작 위치 뒤 남은 사례 수 이하여야 하며 생략하면 나머지를 평가한다. 일부 사례만 선택한 결과는 `complete: false`, `selection`에 시작 위치와 개수를 표시한다. 빈 범위나 범위 초과는 공급자 설정을 읽기 전에 거부한다.
 
 기존 `GM_PROVIDER` 설정도 적용된다. `GM_PROVIDER=mock`이거나 선택 공급자가 설정에서 제외되어 있으면 live 플래그만으로 이를 덮어쓰지 않으며 모델 coverage는 0이 된다. 필요한 경우 위 live 명령 앞에 `GM_PROVIDER=luna` 또는 `GM_PROVIDER=deepseek`를 명시한다.
 
@@ -51,3 +52,18 @@ uv run --locked pytest -q backend/tests/test_evaluation.py
 `luna_realms.ai_calls` 로거의 INFO 메타데이터에는 호출 종류·공급자/모델·지연·토큰·
 고정 상태 코드만 담긴다. 프롬프트·응답 원문·URL·키·오류 문구를 수집하지 않는다.
 DB 영속 계측, 세션별 비용 제한, 의미적 narrator 평가는 후속 작업이다.
+
+## 남은14개 평가와 의도 경계 보완
+
+[두 번째 실행](evaluation-2026-09-21-remaining.json)은 offset12부터14개를 호출했고 모두
+기대 명령과 일치했다. fallback0회, 입력13,966/출력1,291토큰, p50 1.519초/p95 2.287초였다.
+두 실행의 ID는 중복 없이 기존26개 corpus 전체를 덮는다. 같은 작은 고정 corpus를 나눠
+측정한 것이며 단일 실행 `complete=true`, 독립 holdout 또는 일반 정확도95% 증거는 아니다.
+
+별도 실패 주입에서 은신 keyword fallback이 부정·질문을 실제 주사위 판정으로 바꾸는 것을
+발견하여 전체 수행형 패턴으로 수정했다. 명백한 부정·실행 금지·가능 여부 질문의 종결 표현은
+모델 proposal에도 검사한다. 인용 뒤 전달 행동은 구분한다. 공격/은신/방어/교란/질주의
+제안 동사에 대한 명시적 부정절도 검사하여 “공격하지 않고 방어한다”의 공격 proposal은
+막고 방어 proposal은 허용한다. 이는 한정된 동사·문형의 방어이며
+모든 복합 문장의 의미·행동 의사를 판별하는 것은 아니다. 위 두 번째 유료 실행은 이 방어
+수정 이전의 결과다. 수정 후 경계는 합성 HTTP stub·API/규칙 회귀로 검증하며 유료 재실행은 하지 않았다.
