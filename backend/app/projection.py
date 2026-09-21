@@ -6,6 +6,7 @@ from .expedition import public_expedition
 from .progression import public_progression
 from .resources import DEFAULT
 from .tactical import normalized_combat
+from .world_events import public_world
 
 
 def pick(value: Any, fields: str) -> dict[str, Any]:
@@ -36,6 +37,7 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["progression"] = public_progression(state)
+    result.update(public_world(state))
     if "encounter_history" in state:
         result["encounter_history"] = {
             key: value
@@ -113,6 +115,16 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "healing cost gold_spent supplies_spent reward_gold moved attacked "
         "xp_gained level choice world_notice stood_up",
     )
+    if isinstance(payload.get("world_events"), list):
+        result["world_events"] = [
+            pick(event, "id phase text")
+            for event in payload["world_events"]
+            if isinstance(event, dict)
+            and isinstance(event.get("id"), str)
+            and event.get("id") in {"supply_convoy", "market_settlement"}
+            and isinstance(event.get("phase"), str)
+            and event.get("phase") in {"scheduled", "resolved"}
+        ]
     for field in ("condition", "condition_consumed"):
         if payload.get(field) in ("prone", "exposed"):
             result[field] = payload[field]

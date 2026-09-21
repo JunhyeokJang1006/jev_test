@@ -727,8 +727,47 @@ def main() -> None:
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text(
                             f"경험치 {275 if watchtower_victory else 250}"
                         )
+                        expect(page.get_by_role("region", name="지속 세계 사건")).to_contain_text(
+                            "도시 보급 수송"
+                        )
+                        expect(page.get_by_label("파벌 상태").locator("li")).to_have_count(3)
+                        if action == "미라에게 봉인 전달":
+                            expect(
+                                page.get_by_role(
+                                    "button", name="보급 수송 호위 요청 (10분)", exact=True
+                                )
+                            ).to_have_count(0)
+                            click("보급 수송 자원봉사 (30분)")
+                            expect(
+                                page.get_by_role("region", name="지속 세계 사건")
+                            ).to_contain_text("준비한 지원: 자원봉사")
                         click("성장: 전투 숙련")
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 5")
+                        # Training advances world time: supported/dual rescue arrives,
+                        # while documents alone without intervention delays the convoy.
+                        expect(page.get_by_label("현재 시장 상황")).to_contain_text(
+                            "물자 부족" if exile else "지원 물자 도착"
+                        )
+                        for _ in range(6):
+                            waiting = page.get_by_role(
+                                "button", name="세계 사건 기다리기 (10분)", exact=True
+                            )
+                            if not waiting.count():
+                                break
+                            click("세계 사건 기다리기 (10분)")
+                        expect(
+                            page.get_by_role("button", name="세계 사건 기다리기 (10분)", exact=True)
+                        ).to_have_count(0)
+                        expect(page.get_by_label("현재 시장 상황")).to_contain_text(
+                            "수송 재개" if exile else "지원 물자 도착"
+                        )
+                        page.reload()
+                        expect(page.get_by_role("region", name="지속 세계 사건")).to_contain_text(
+                            "시장 보급 정산"
+                        )
+                        expect(
+                            page.get_by_role("button", name="세계 사건 기다리기 (10분)", exact=True)
+                        ).to_have_count(0)
                         page.reload()
                         expect(page.get_by_label("망루 원정")).to_contain_text("보고 완료")
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 5")
@@ -784,6 +823,7 @@ def main() -> None:
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
                     "구조/문서/동시 확보·귀환 보고·레벨5 성장, "
                     "여관 이후 망루 전투와 후퇴의 원정 합류(실주사위 결과는 위 별도 기록), "
+                    "원정 후 지원/미개입에 따른 수송·파벌 복구·시장 가격 변화와 재접속, "
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "

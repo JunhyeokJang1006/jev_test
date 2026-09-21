@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import PixelScene from "./pixel-scene";
 import Battlefield from "./battlefield";
+import WorldEvents from "./world-events";
 import { boundedFetch, CAMPAIGN_KEY, clearPending, MUTATION_LOCK, OUTBOX_KEY, readPending, storePending, type PendingTurn } from "./turn-recovery";
 
 type Campaign = { id: string; name: string; state_version: number; state: Record<string, any>; latest_turn?: Turn | null; actions?: string[] };
@@ -257,6 +258,7 @@ export default function CampaignPanel() {
       {campaign.state.expedition.resolution && <p>{campaign.state.expedition.resolution}</p>}
       <p>설득·잠입은 각각 한 번만 시도할 수 있습니다. 실패해도 안전한 작업으로 진행할 수 있습니다. 동시 구출에는 두 단서와 로프, 최종 작업 5분이 필요합니다.</p>
     </section>}
+    {campaign && <WorldEvents events={campaign.state.world_events ?? []} factions={campaign.state.factions ?? {}} elapsed={campaign.state.elapsed_minutes ?? 0} marketPolicy={campaign.state.market_policy} />}
     {campaign?.state.progression && <section aria-label="캐릭터 성장">
       <p>레벨 {campaign.state.progression.level} · 경험치 {campaign.state.progression.xp} / {campaign.state.progression.next_level_xp ?? "현재 성장 상한"}</p>
       <p>공격 +{campaign.state.player.attack_bonus ?? 5} · 은신 +{campaign.state.player.stealth_bonus ?? 5} · 설득 +{campaign.state.player.persuasion_bonus ?? 3}</p>
@@ -280,7 +282,7 @@ export default function CampaignPanel() {
     </section>}
     {campaign?.latest_turn?.dice?.roll != null && <p aria-label="최근 판정">주사위 {campaign.latest_turn.dice.roll} + {campaign.latest_turn.dice.bonus ?? 0} = {campaign.latest_turn.dice.total ?? campaign.latest_turn.dice.roll} · {campaign.latest_turn.dice.dc != null ? `DC ${campaign.latest_turn.dice.dc}` : "전투 판정"} · {campaign.latest_turn.dice.outcome}{campaign.latest_turn.event.payload.attack_rolls?.length === 2 && <span> · 공격 굴림 [{campaign.latest_turn.event.payload.attack_rolls.join(", ")}] 중 높은 값 선택</span>}</p>}
     {campaign?.state.world_consequences && <p aria-label="세계 변화">통행세: {({ suspended: "징수 잠정 중단", contested: "공개 분쟁", unchanged: "변화 없음" } as Record<string, string>)[campaign.state.world_consequences.tax_collection]} · 피난민: {campaign.state.world_consequences.refugees === "evacuated" ? "피난 완료" : "도시 잔류"}</p>}
-    {campaign?.state.world_effects && <p aria-label="도시 공고">{campaign.state.world_effects.applied ? campaign.state.world_effects.notice : `사건의 소식이 퍼지고 있습니다. 공고까지 ${Math.max(0, campaign.state.world_effects.effective_at - (campaign.state.elapsed_minutes ?? 0))}분.`}</p>}
+    {campaign?.state.world_effects && <p aria-label="도시 공고">{campaign.state.world_events?.some((event: { status: string }) => event.status === "resolved") ? "이전 도시 공고: " : ""}{campaign.state.world_effects.applied ? campaign.state.world_effects.notice : `사건의 소식이 퍼지고 있습니다. 공고까지 ${Math.max(0, campaign.state.world_effects.effective_at - (campaign.state.elapsed_minutes ?? 0))}분.`}</p>}
     <nav aria-label="가능한 행동">{campaign?.actions?.map(action => <button className="secondary" key={action} type="button" disabled={actionsBlocked} onClick={() => void sendTurn(action)}>{action}</button>)}</nav>
     <label htmlFor="action">행동</label><textarea id="action" value={input} onChange={(event) => setInput(event.target.value)} disabled={!campaign || actionsBlocked} />
     <button type="button" onClick={() => void sendTurn()} disabled={!campaign || actionsBlocked}>{busy ? "판정 중…" : "행동 보내기"}</button>

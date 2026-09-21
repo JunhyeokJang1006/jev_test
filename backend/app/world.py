@@ -3,7 +3,16 @@
 from copy import deepcopy
 from typing import Any
 
-from . import defeat, expedition, followup, progression, resources, tactical, world_effects
+from . import (
+    defeat,
+    expedition,
+    followup,
+    progression,
+    resources,
+    tactical,
+    world_effects,
+    world_events,
+)
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -23,6 +32,7 @@ LOCATIONS = {
     "watchtower": {"name": "꺼진 망루", "exits": ["eastern_gate"], "npcs": []},
 }
 COMMANDS = {
+    **world_events.COMMANDS,
     **defeat.COMMANDS,
     **followup.COMMANDS,
     **resources.COMMANDS,
@@ -87,6 +97,7 @@ def available_actions(state: dict[str, Any]) -> list[str]:
         return tactical.available_actions(state)
     if state.get("quest", {}).get("ending"):
         actions = [
+            *world_events.available_actions(state),
             *tactical.available_actions(state),
             *followup.available_actions(state),
             *progression.available_actions(state),
@@ -147,12 +158,14 @@ def resolve_world(
     followup_intents = {command[0] for command in followup.COMMANDS.values()}
     resource_intents = {command[0] for command in resources.COMMANDS.values()} | {"train"}
     expedition_intents = {command[0] for command in expedition.COMMANDS.values()}
+    world_event_intents = {command[0] for command in world_events.COMMANDS.values()}
     if (
         intent
         not in {"travel", "talk", "investigate", "take_seal", "finish_quest", "wait_notice"}
         | followup_intents
         | resource_intents
         | expedition_intents
+        | world_event_intents
     ):
         return None
     if len(targets) != 1:
@@ -175,7 +188,10 @@ def resolve_world(
     check_result = None
     resource_result = None
     expedition_result = None
-    if intent == "wait_notice":
+    if intent in world_event_intents:
+        resource_result = world_events.apply(result, intent, targets)
+        narrative, minutes = resource_result["narrative"], resource_result["minutes"]
+    elif intent == "wait_notice":
         if targets != ("notice",) or not world_effects.available_actions(result):
             raise ValueError("현재 기다릴 공고가 없습니다.")
         minutes = 10
@@ -232,6 +248,7 @@ def resolve_world(
             raise ValueError("그 인물은 현재 장소에 없습니다.")
         if quest["ending"]:
             public_notice = world_effects.notice_for_npc(result, target)
+            world_notice = world_events.notice_for_npc(result, target)
             expedition_report = (
                 result["npc_knowledge"][target]["facts"].get("expedition_report", {}).get("text")
             )
@@ -247,6 +264,8 @@ def resolve_world(
                     "제가 직접 아는 일부터 이야기하겠습니다."
                 )
             )
+            if world_notice:
+                narrative += " " + world_notice
             advance_time(result, minutes)
             record_episode(result, target, "aftermath_discussion")
             result["journal"].append(
@@ -364,6 +383,8 @@ def resolve_world(
     return {
         "event_type": "EXPEDITION_ACTION_RESOLVED"
         if expedition_result
+        else "WORLD_EVENT_ACTION_RESOLVED"
+        if intent in world_event_intents
         else "PROGRESSION_ACTION_RESOLVED"
         if intent == "train"
         else "RESOURCE_ACTION_RESOLVED"

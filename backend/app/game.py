@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
 
-from . import defeat, progression, tactical, world_effects
+from . import defeat, progression, tactical, world_effects, world_events
 from .dice import Dice, Roller
 from .memory import record_episode
 from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
@@ -130,6 +130,22 @@ def resolve_action(
         )
         if proposal.intent == "talk" and len(proposal.target_ids) == 1:
             world_effects.notice_for_npc(outcome.state, proposal.target_ids[0])
+    changes = world_events.advance(outcome.state)
+    if changes:
+        payload["world_events"] = changes
+        for change in changes:
+            narrative += " " + change["text"]
+            outcome.state.setdefault("journal", []).append(
+                {
+                    "action": "world_event",
+                    "target": change["id"],
+                    "text": change["text"],
+                    "day": outcome.state["day"],
+                    "time": outcome.state["time"],
+                }
+            )
+        if proposal.intent == "talk" and len(proposal.target_ids) == 1:
+            world_events.notice_for_npc(outcome.state, proposal.target_ids[0])
     return replace(outcome, event_payload=payload, narrative=narrative)
 
 
