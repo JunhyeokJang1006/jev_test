@@ -19,13 +19,14 @@ def scene_context(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "location": {"id": state.get("location_id"), "name": state.get("location_name")},
         "exits": [{"id": key, "name": LOCATIONS[key]["name"]} for key in location.get("exits", [])],
-        "player": {key: player.get(key) for key in ("id", "name", "hp", "ac")},
+        "player": {key: player.get(key) for key in ("id", "name", "hp", "max_hp", "ac")},
         "nearby_npcs": [
             {key: npc.get(key) for key in ("id", "name", "disposition")}
             for npc in state.get("npcs", [])[:10]
         ],
         "known_clues": list(quest.get("clues", []))[:20],
         "inventory": list(state.get("inventory", []))[:30],
+        "resources": state.get("resources"),
         "quest_status": quest.get("status"),
         "followup": state.get("followup"),
         "world_consequences": state.get("world_consequences"),

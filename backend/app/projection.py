@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from .resources import DEFAULT
+
 
 def pick(value: Any, fields: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -23,6 +25,9 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
     )
     result["player"] = pick(
         state.get("player"), "id name hp max_hp ac stealth_bonus attack_bonus damage_bonus"
+    )
+    result["resources"] = pick(
+        state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["npcs"] = [pick(npc, "id name disposition") for npc in state.get("npcs", [])]
     result["nearby_object_ids"] = strings(state.get("nearby_object_ids", []))
@@ -57,10 +62,15 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
     result = pick(
         payload,
         "intent target_id enemy_id skill dc roll bonus success ac damage hit "
-        "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending",
+        "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending "
+        "healing cost reward_gold",
     )
     if "damage_rolls" in payload:
         result["damage_rolls"] = [value for value in payload["damage_rolls"] if type(value) is int]
+    if "healing_rolls" in payload:
+        result["healing_rolls"] = [
+            value for value in payload["healing_rolls"] if type(value) is int
+        ]
     if "enemy_attack" in payload:
         result["enemy_attack"] = (
             public_payload(payload["enemy_attack"])
@@ -73,7 +83,7 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
 def public_turn(turn: dict[str, Any]) -> dict[str, Any]:
     result = pick(turn, "turn_id state_version narrative narrative_status")
     result["state"] = public_state(turn.get("state", {}))
-    result["dice"] = pick(turn.get("dice"), "roll bonus total dc ac damage outcome")
+    result["dice"] = pick(turn.get("dice"), "roll bonus total dc ac damage healing outcome")
     event = turn.get("event", {})
     result["event"] = {
         **pick(event, "type"),

@@ -139,6 +139,10 @@ export default function CampaignPanel() {
     <p className="narrative">{narrative}</p>
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · Goblin HP {campaign.state.combat.enemy_hp}</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>
+    {campaign?.state.resources && <section aria-label="회복과 보급">
+      <p>골드 {campaign.state.resources.gold ?? 0} · 치유 물약 {campaign.state.resources.healing_potions ?? 0} · 야영 보급품 {campaign.state.resources.camp_supplies ?? 0} · 회복 주사위 {campaign.state.resources.hit_dice ?? 0}/2</p>
+      <p>전투 밖에서 물약: 2d4+2. 여관 짧은 휴식: 1시간·회복 주사위 1개로 1d8+2. 긴 휴식: 8시간·보급품 1개로 완전 회복.</p>
+    </section>}
     {campaign?.state.quest && <div aria-label="퀘스트">
       <h3>{campaign.state.quest.title}</h3>
       <p>{campaign.state.quest.ending_title ?? (campaign.state.quest.status === "recovered" ? "봉인을 회수했습니다. 누구에게 전달할까요?" : "도난당한 봉인의 행방을 조사하세요.")}</p>

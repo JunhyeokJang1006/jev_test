@@ -70,6 +70,8 @@ def test_followup_keeps_choice_and_restores_evidence(branch):
     assert turn(campaign, finish).status_code == 200
     assert campaign["state"]["quest"] == original
     assert campaign["state"]["followup"]["status"] == "completed"
+    assert campaign["state"]["resources"]["gold"] == 35
+    assert campaign["event"]["payload"]["reward_gold"] == 15
     assert (
         campaign["state"]["world_consequences"]["tax_collection"]
         == BRANCHES[branch]["tax_collection"]

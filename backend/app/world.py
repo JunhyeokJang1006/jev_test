@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from . import followup
+from . import followup, resources
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -22,6 +22,7 @@ LOCATIONS = {
 }
 COMMANDS = {
     **followup.COMMANDS,
+    **resources.COMMANDS,
     "하를란에게 시장이 보냈다고 거짓말": ("deceive_mayor", "npc_harlan"),
     "시장님이 직접 저를 보냈습니다.": ("deceive_mayor", "npc_harlan"),
     "여관으로 이동": ("travel", "greyhaven_inn"),
@@ -48,6 +49,7 @@ def advance_time(state: dict[str, Any], minutes: int) -> None:
 def prepare(state: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(state)
     initialize_knowledge(result)
+    resources.initialize(result)
     result.setdefault(
         "quest",
         {
@@ -74,6 +76,7 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     if state.get("quest", {}).get("ending"):
         actions = followup.available_actions(state)
         if state.get("followup", {}).get("status") == "active":
+            actions.extend(resources.available_actions(state))
             location = LOCATIONS.get(state.get("location_id"), {})
             for label, (intent, target) in COMMANDS.items():
                 if intent == "travel" and target in location.get("exits", []):
@@ -86,7 +89,7 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     location = LOCATIONS.get(state.get("location_id"))
     if location is None:
         return []
-    actions = ["주변 조사"]
+    actions = ["주변 조사", *resources.available_actions(state)]
     for label, (intent, target) in COMMANDS.items():
         if intent == "travel" and target in location["exits"]:
             actions.append(label)
@@ -111,9 +114,12 @@ def resolve_world(
     state: dict[str, Any], intent: str, targets: tuple[str, ...], *, roller: Roller | None = None
 ) -> dict | None:
     followup_intents = {command[0] for command in followup.COMMANDS.values()}
+    resource_intents = {command[0] for command in resources.COMMANDS.values()}
     if (
         intent
-        not in {"travel", "talk", "investigate", "take_seal", "finish_quest"} | followup_intents
+        not in {"travel", "talk", "investigate", "take_seal", "finish_quest"}
+        | followup_intents
+        | resource_intents
     ):
         return None
     if len(targets) != 1:
@@ -134,7 +140,13 @@ def resolve_world(
     minutes = 1
     clue = None
     check_result = None
-    if intent == "followup_check":
+    resource_result = None
+    if intent in resource_intents:
+        resource_result = resources.apply(
+            result, intent, target, roller if roller is not None else Dice()
+        )
+        narrative, minutes = resource_result["narrative"], resource_result["minutes"]
+    elif intent == "followup_check":
         narrative, minutes, check_result = followup.check(
             result, target, roller if roller is not None else Dice()
         )
@@ -289,7 +301,7 @@ def resolve_world(
         }
     )
     return {
-        "event_type": "WORLD_ACTION_RESOLVED",
+        "event_type": "RESOURCE_ACTION_RESOLVED" if resource_result else "WORLD_ACTION_RESOLVED",
         "event_payload": {
             **(check_result or {}),
             "intent": intent,
@@ -300,10 +312,14 @@ def resolve_world(
             "rule_id": "greyhaven-aftermath-v1"
             if state.get("quest", {}).get("ending")
             else "greyhaven-seal-v1",
+            **(resource_result["payload"] if resource_result else {}),
+            **({"reward_gold": 15} if intent == "resolve_followup" else {}),
         },
         "state": result,
         "narrative": narrative,
-        "dice": (
+        "dice": resource_result["dice"]
+        if resource_result
+        else (
             {
                 "roll": check_result["roll"],
                 "bonus": check_result["bonus"],

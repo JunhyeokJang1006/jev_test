@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from . import resources
 from .dice import Roller
 
 COMMANDS = {
@@ -184,6 +185,8 @@ def apply(state: dict[str, Any], intent: str, targets: tuple[str, ...]) -> str:
         "tax_collection": config["tax_collection"],
         "refugees": config["refugees"],
     }
+    resources.initialize(state)
+    state["resources"]["gold"] = state["resources"].get("gold", 0) + 15
     ally = config["ally"]
     state["npc_relationships"][ally] = "trusting"
     for npc in state.get("npcs", []):

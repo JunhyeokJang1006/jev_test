@@ -110,10 +110,18 @@ def main() -> None:
                             position={"x": box["width"] * x / 640, "y": box["height"] * y / 320}
                         )
 
+                    click("여관에서 짧은 휴식")
+                    click("여관에서 긴 휴식")
+                    expect(page.get_by_text("Kael · HP 37/37", exact=True)).to_be_visible()
+                    expect(page.get_by_label("회복과 보급")).to_contain_text("야영 보급품 1")
                     map_click(260, 155)
                     expect(page.locator(".narrative")).to_contain_text("Harlan:")
                     map_click(568, 250)
                     expect(page.locator(".campaign-heading .eyebrow")).to_have_text("빗속의 시장")
+                    click("치유 물약 구매 (8골드)")
+                    click("야영 보급품 구매 (3골드)")
+                    expect(page.get_by_label("회복과 보급")).to_contain_text("골드 9")
+                    expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 3")
                     map_click(48, 250)
                     expect(page.locator(".campaign-heading .eyebrow")).to_have_text("Greyhaven Inn")
 

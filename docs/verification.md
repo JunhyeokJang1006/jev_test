@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 97 passed. 기존 검사와 4가지 대체 경로 성공/실패, 1회 판정·동시성·저장 후 재시도 차단·실패 후 확보 확인 |
+| API/AI 테스트 | PASS | pytest 107 passed. 기존 검사와 회복 상한·자원 부족·사망/전투 차단·구매·자정 경계·구버전 자원·회복 멱등/분기 확인 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -76,6 +76,10 @@ Astra 독립 검사 27개 및 메모리 상태 탐색 588개 assertion에서 허
 Astra가 관련 24개 검사를 독립 실행했다. falsey 주사위 주입도 유지하도록 보완하고 회귀를 추가했다.
 Chrome에서는 세 후속 경로에 실제 판정을 사용하고 실패 시 정식 확보로 이어서 완주했다.
 성공·실패 전 조합의 브라우저 검사는 아니며 그 조합은 서버 테스트에서 결정적 주사위로 검증했다.
+
+회복·보급: 107개 전체 검사와 Chrome의 짧은/긴 휴식, 최대 HP 회복, 시장 구매 후 잔액/수량,
+세 후속 사건 완주가 통과했다. Astra가 관련 24개 검사와 후속 중 회복·전투/종결 차단·구매 상한을
+독립 확인했다. 누락된 개별 자원은 UI에서도 0으로 표시한다. 전투 중 회복·장비·성장은 아직 미구현이다.
 
 첫 검사에서 ruff의 app 모듈 분류를 명시하도록 수정했다.
 TestClient 경로의 의존성 deprecation 경고는 httpx ASGITransport 기반 테스트로 변경하여 해소했다.
