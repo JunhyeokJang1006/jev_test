@@ -18,7 +18,11 @@ def scene_context(state: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "location": {"id": state.get("location_id"), "name": state.get("location_name")},
-        "exits": [{"id": key, "name": LOCATIONS[key]["name"]} for key in location.get("exits", [])],
+        "exits": [
+            {"id": key, "name": LOCATIONS[key]["name"]}
+            for key in location.get("exits", [])
+            if any(item["intent"] == "travel" and item["target_id"] == key for item in commands)
+        ],
         "player": {key: player.get(key) for key in ("id", "name", "hp", "max_hp", "ac")},
         "nearby_npcs": [
             {key: npc.get(key) for key in ("id", "name", "disposition")}
@@ -31,6 +35,7 @@ def scene_context(state: dict[str, Any]) -> dict[str, Any]:
         "combat": state.get("combat"),
         "quest_status": quest.get("status"),
         "followup": state.get("followup"),
+        "expedition": state.get("expedition"),
         "world_consequences": state.get("world_consequences"),
         "market_policy": state.get("market_policy"),
         "world_effects": state.get("world_effects"),

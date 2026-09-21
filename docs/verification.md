@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 195 passed. 복수 적·저장 보존 회귀와 후속 턴 뒤 재송신, 서사 생성 중 pending 결과 재생 검사 포함 |
+| API/AI 테스트 | PASS | pytest 214 passed. 기존 회귀와 망루 원정13개·API연쇄/저장/명령6개 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -118,6 +118,14 @@ Next.js 개발 서버가 생성한 frontend/AGENTS.md와 CLAUDE.md는 도구 안
 루트 전체 check는 195 tests·Ruff·TypeScript·production build PASS이며 Sol이 관련15개를
 독립 재실행하고 수정 후 잔여 차단 없음으로 판정했다. pending 서사는 완료로 표시하지 않지만
 자동 생성 재개는 하지 않는다. 사용자가 브라우저 저장소를 지운 경우 원 요청 복구도 보장하지 않는다.
+
+망루 원정 확장: 전체 check 214개·Ruff·TypeScript·production build PASS.
+Astra writer가 원정 규칙과 13개 단위 검사를 맡았고 루트가 세계·API·공개 context·성장·화면과
+6개 통합 검사를 연결했다. Sol은 관련46개 및 단계별 내부/공개/context 행동 목록 일치를 확인했다.
+Chrome에서 기존 세 봉인 선택→후속 사건→분기별 원정 준비→성문→망루→서로 다른 세 결과→
+귀환 보고→레벨5→새로고침→원래 저장 복원을 확인했다. 모바일에서도 신규 장소를 지도 클릭으로 이동했다.
+검사 중 발견한 대문자 DC 버튼 해석 오류와 화면 폭 변경 직후 canvas 클릭 범위 문제를 수정 후 재실행했다.
+결과는 고정/혼합 버튼 경로와 mock 환경 검증이며 실제 유료 모델의 자유입력 완주 또는 30~40분 체감 평가는 아니다.
 
 ## 미실행·미구현
 

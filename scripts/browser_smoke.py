@@ -227,6 +227,7 @@ def main() -> None:
                         expect(host).to_have_attribute("data-ready", "true")
                         canvas = host.locator("canvas")
                         expect(canvas).to_have_count(1)
+                        canvas.scroll_into_view_if_needed()
                         box = canvas.bounding_box()
                         assert box is not None
                         canvas.click(
@@ -348,6 +349,63 @@ def main() -> None:
                         page.reload()
                         expect(page.get_by_text("진행: 해결", exact=False)).to_be_visible()
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 4")
+                        click("꺼진 망루의 전령 의뢰 수락")
+                        expect(page.get_by_label("망루 원정")).to_contain_text("꺼진 망루의 전령")
+                        click(
+                            "경비대 통행증 확보"
+                            if action == "하를란에게 봉인 반환"
+                            else "피난로 경험으로 길 준비"
+                            if exile
+                            else "상인 소개장 확보"
+                        )
+                        click("야영 보급품 1개로 구조 로프 준비")
+                        map_click(320, 250)
+                        expect(page.locator(".campaign-heading .eyebrow")).to_have_text("동쪽 성문")
+                        if action == "하를란에게 봉인 반환":
+                            click("경비대 통행증으로 성문 통과")
+                        else:
+                            check = (
+                                "성문으로 잠입 (DC 14, 한 번)"
+                                if exile
+                                else "성문 경비 설득 (DC 14, 한 번)"
+                            )
+                            click(check)
+                            expect(page.get_by_label("최근 판정")).to_be_visible()
+                            if page.get_by_role(
+                                "button", name="성문 보수 작업을 돕고 통과 (20분)", exact=True
+                            ).count():
+                                click("성문 보수 작업을 돕고 통과 (20분)")
+                        page.set_viewport_size({"width": 390, "height": 844})
+                        map_click(568, 250)
+                        expect(page.locator(".campaign-heading .eyebrow")).to_have_text("꺼진 망루")
+                        assert page.evaluate(
+                            "document.documentElement.scrollWidth <= window.innerWidth"
+                        )
+                        for command in [
+                            "망루에서 전령 위치 조사 (5분)",
+                            "망루에서 문서 위치 조사 (5분)",
+                            "망루 계단 보강 (10분)",
+                        ]:
+                            click(command)
+                        click(
+                            "로프로 전령과 문서 모두 확보 확정 (5분)"
+                            if action == "하를란에게 봉인 반환"
+                            else "문서 확보 우선 확정 (전령 구조 포기, 5분)"
+                            if exile
+                            else "전령 구조 우선 확정 (문서 포기, 5분)"
+                        )
+                        expect(page.get_by_label("망루 원정")).to_contain_text("현장 해결")
+                        click("동쪽 성문으로 이동")
+                        click("시장으로 이동")
+                        click("오렌에게 망루 결과 보고 (25골드)")
+                        expect(page.get_by_label("망루 원정")).to_contain_text("보고 완료")
+                        expect(page.get_by_label("캐릭터 성장")).to_contain_text("경험치 250")
+                        click("성장: 전투 숙련")
+                        expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 5")
+                        page.reload()
+                        expect(page.get_by_label("망루 원정")).to_contain_text("보고 완료")
+                        expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 5")
+                        page.set_viewport_size({"width": 1280, "height": 900})
                         click("복원")
                         expect(page.get_by_text("소지품: 왕실 봉인", exact=True)).to_be_visible()
                     observer = context.new_page()
@@ -394,7 +452,8 @@ def main() -> None:
                     assert not failures, failures
                     browser.close()
                 print(
-                    "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건 완주, "
+                    "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
+                    "구조/문서/동시 확보·귀환 보고·레벨5 성장, "
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "다중 탭·저장소 실패 차단, "

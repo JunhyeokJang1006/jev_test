@@ -289,6 +289,11 @@ def play_turn(request: TurnRequest) -> dict[str, Any]:
             raise HTTPException(409, "stale_state_version")
         jev = jev_route(request.input)
         proposal, provider = interpret_action(request.input, campaign["state"])
+        if proposal.intent == "resolve_expedition" and (
+            len(proposal.target_ids) != 1
+            or COMMANDS.get(request.input.strip()) != (proposal.intent, proposal.target_ids[0])
+        ):
+            raise HTTPException(422, "expedition_choice_requires_explicit_command")
         connection.execute("BEGIN IMMEDIATE")
         campaign = read_campaign(connection, request.campaign_id)
         if campaign is None:

@@ -14,8 +14,10 @@ type SceneState = {
 
 const exits: Record<string, { label: string; action: string }[]> = {
   greyhaven_inn: [{ label: "시장 →", action: "시장으로 이동" }],
-  market: [{ label: "← 여관", action: "여관으로 이동" }, { label: "창고 →", action: "창고로 이동" }],
+  market: [{ label: "← 여관", action: "여관으로 이동" }, { label: "창고 →", action: "창고로 이동" }, { label: "동쪽 성문", action: "동쪽 성문으로 이동" }],
   warehouse: [{ label: "시장 →", action: "시장으로 이동" }],
+  eastern_gate: [{ label: "← 시장", action: "시장으로 이동" }, { label: "망루 →", action: "망루로 이동" }],
+  watchtower: [{ label: "성문 →", action: "동쪽 성문으로 이동" }],
 };
 const talk: Record<string, string> = {
   npc_harlan: "하를란과 대화", npc_mira: "미라와 대화", npc_oren: "오렌과 대화",
@@ -102,9 +104,9 @@ export default function PixelScene({ state, actions, busy, onAction }: {
             label(480, 280, `Goblin · ${state.combat.enemy_hp ?? 0} HP`, "#f4a49c");
             actionZone(480, 238, "고블린을 공격한다");
           }
-          const paths = exits[state.location_id ?? ""] ?? [];
+          const paths = (exits[state.location_id ?? ""] ?? []).filter(path => controls.current.actions.includes(path.action));
           for (const [index, path] of paths.entries()) {
-            const x = paths.length === 2 && index === 0 ? 48 : 568;
+            const x = paths.length >= 2 && index === 0 ? 48 : index === 2 ? 320 : 568;
             graphics.fillStyle(0x9e8454).fillRect(x - 18, 228, 36, 46);
             label(x, 294, path.label, "#e8c773");
             actionZone(x, 250, path.action);

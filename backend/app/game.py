@@ -32,8 +32,11 @@ class TurnOutcome:
 
 def interpret_mock(text: str) -> ActionProposal:
     normalized = text.strip().lower()
-    if normalized in COMMANDS:
-        intent, target = COMMANDS[normalized]
+    command = next(
+        (value for label, value in COMMANDS.items() if label.lower() == normalized), None
+    )
+    if command is not None:
+        intent, target = command
         return ActionProposal(intent, "exploration", (target,), None, None)
     stealth_words = ("숨", "잠입", "은신", "그림자", "몰래")
     if any(word in normalized for word in stealth_words):

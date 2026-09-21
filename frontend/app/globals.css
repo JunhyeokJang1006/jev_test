@@ -18,4 +18,4 @@ button:disabled { cursor: wait; opacity: .6; }
 .secondary { margin-left: 8px; color: #e9e4d7; background: #34404c; }
 .error { color: #ff9e9e; }
 .pixel-host { width: 100%; aspect-ratio: 2; overflow: hidden; border-radius: 8px; background: #182331; }
-.pixel-host canvas { display: block; image-rendering: pixelated; }
+.pixel-host canvas { display: block; width: 100% !important; height: auto !important; image-rendering: pixelated; }

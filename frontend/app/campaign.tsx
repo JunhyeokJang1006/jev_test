@@ -208,6 +208,14 @@ export default function CampaignPanel() {
     {campaignChanged && <p className="error" role="alert">다른 탭에서 캠페인이 변경되었습니다. 새로고침해 현재 캠페인을 불러와 주세요.</p>}
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · 생존 적 {(campaign.state.combat.enemies ?? [{ hp: campaign.state.combat.enemy_hp }]).filter((enemy: { hp: number }) => enemy.hp > 0).length}명</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>
+    {campaign?.state.expedition && <section aria-label="망루 원정">
+      <h3>{campaign.state.expedition.title}</h3>
+      <p>{campaign.state.expedition.objective}</p>
+      <p>확보한 단서 {(campaign.state.expedition.clues ?? []).length}개 · {campaign.state.expedition.status === "completed" ? "보고 완료" : campaign.state.expedition.status === "resolved" ? "현장 해결 · 시장으로 돌아가 보고하세요" : "진행 중"}</p>
+      {campaign.state.expedition.status === "active" && <p>두 대상을 모두 구할 기회까지 {Math.max(0, campaign.state.expedition.deadline_at - (campaign.state.elapsed_minutes ?? 0))}분. 이동·휴식·작업 시간도 포함됩니다. 기한을 넘겨도 한 대상을 선택해 진행할 수 있습니다.</p>}
+      {campaign.state.expedition.resolution && <p>{campaign.state.expedition.resolution}</p>}
+      <p>설득·잠입은 각각 한 번만 시도할 수 있습니다. 실패해도 안전한 작업으로 진행할 수 있습니다. 동시 구출에는 두 단서와 로프, 최종 작업 5분이 필요합니다.</p>
+    </section>}
     {campaign?.state.progression && <section aria-label="캐릭터 성장">
       <p>레벨 {campaign.state.progression.level} · 경험치 {campaign.state.progression.xp} / {campaign.state.progression.next_level_xp ?? "현재 성장 상한"}</p>
       <p>공격 +{campaign.state.player.attack_bonus ?? 5} · 은신 +{campaign.state.player.stealth_bonus ?? 5} · 설득 +{campaign.state.player.persuasion_bonus ?? 3}</p>

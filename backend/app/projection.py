@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from .expedition import public_expedition
 from .progression import public_progression
 from .resources import DEFAULT
 from .tactical import normalized_combat
@@ -37,6 +38,8 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
     result["progression"] = public_progression(state)
     if "world_effects" in state:
         result["world_effects"] = pick(state["world_effects"], "effective_at applied notice")
+    if "expedition" in state:
+        result["expedition"] = public_expedition(state)
     result["npcs"] = [pick(npc, "id name disposition") for npc in state.get("npcs", [])]
     result["nearby_object_ids"] = strings(state.get("nearby_object_ids", []))
     if "inventory" in state:

@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from . import followup, progression, resources, tactical, world_effects
+from . import expedition, followup, progression, resources, tactical, world_effects
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -15,10 +15,12 @@ LOCATIONS = {
     },
     "market": {
         "name": "빗속의 시장",
-        "exits": ["greyhaven_inn", "warehouse"],
+        "exits": ["greyhaven_inn", "warehouse", "eastern_gate"],
         "npcs": [("npc_oren", "Oren")],
     },
     "warehouse": {"name": "강변 창고", "exits": ["market"], "npcs": []},
+    "eastern_gate": {"name": "동쪽 성문", "exits": ["market", "watchtower"], "npcs": []},
+    "watchtower": {"name": "꺼진 망루", "exits": ["eastern_gate"], "npcs": []},
 }
 COMMANDS = {
     **followup.COMMANDS,
@@ -26,11 +28,14 @@ COMMANDS = {
     **tactical.COMMANDS,
     **progression.COMMANDS,
     **world_effects.COMMANDS,
+    **expedition.COMMANDS,
     "하를란에게 시장이 보냈다고 거짓말": ("deceive_mayor", "npc_harlan"),
     "시장님이 직접 저를 보냈습니다.": ("deceive_mayor", "npc_harlan"),
     "여관으로 이동": ("travel", "greyhaven_inn"),
     "시장으로 이동": ("travel", "market"),
     "창고로 이동": ("travel", "warehouse"),
+    "동쪽 성문으로 이동": ("travel", "eastern_gate"),
+    "망루로 이동": ("travel", "watchtower"),
     "주변 조사": ("investigate", "scene"),
     "하를란과 대화": ("talk", "npc_harlan"),
     "미라와 대화": ("talk", "npc_mira"),
@@ -82,12 +87,17 @@ def available_actions(state: dict[str, Any]) -> list[str]:
             *followup.available_actions(state),
             *progression.available_actions(state),
             *world_effects.available_actions(state),
+            *expedition.available_actions(state),
         ]
         if state.get("followup", {}).get("status") in {"active", "completed"}:
             actions.extend(resources.available_actions(state))
             location = LOCATIONS.get(state.get("location_id"), {})
             for label, (intent, target) in COMMANDS.items():
-                if intent == "travel" and target in location.get("exits", []):
+                if (
+                    intent == "travel"
+                    and target in location.get("exits", [])
+                    and expedition.travel_allowed(state, target)
+                ):
                     actions.append(label)
                 if intent == "talk" and target in {npc[0] for npc in location.get("npcs", [])}:
                     actions.append(label)
@@ -104,7 +114,11 @@ def available_actions(state: dict[str, Any]) -> list[str]:
         *progression.available_actions(state),
     ]
     for label, (intent, target) in COMMANDS.items():
-        if intent == "travel" and target in location["exits"]:
+        if (
+            intent == "travel"
+            and target in location["exits"]
+            and expedition.travel_allowed(state, target)
+        ):
             actions.append(label)
         if intent == "talk" and target in {npc[0] for npc in location["npcs"]}:
             actions.append(label)
@@ -128,11 +142,13 @@ def resolve_world(
 ) -> dict | None:
     followup_intents = {command[0] for command in followup.COMMANDS.values()}
     resource_intents = {command[0] for command in resources.COMMANDS.values()} | {"train"}
+    expedition_intents = {command[0] for command in expedition.COMMANDS.values()}
     if (
         intent
         not in {"travel", "talk", "investigate", "take_seal", "finish_quest", "wait_notice"}
         | followup_intents
         | resource_intents
+        | expedition_intents
     ):
         return None
     if len(targets) != 1:
@@ -154,11 +170,17 @@ def resolve_world(
     clue = None
     check_result = None
     resource_result = None
+    expedition_result = None
     if intent == "wait_notice":
         if targets != ("notice",) or not world_effects.available_actions(result):
             raise ValueError("현재 기다릴 공고가 없습니다.")
         minutes = 10
         narrative = "소문과 공고를 기다리며 10분을 보냈다."
+    elif intent in expedition_intents:
+        expedition_result = expedition.apply(
+            result, intent, targets, roller if roller is not None else Dice()
+        )
+        narrative, minutes = expedition_result["narrative"], expedition_result["minutes"]
     elif intent in resource_intents:
         resource_result = (
             progression.apply(result, intent, targets)
@@ -175,7 +197,7 @@ def resolve_world(
             minutes = followup.evidence_minutes(result, target)
         narrative = followup.apply(result, intent, targets)
     elif intent == "travel":
-        if target not in location["exits"]:
+        if target not in location["exits"] or not expedition.travel_allowed(result, target):
             raise ValueError("현재 위치에서 바로 이동할 수 없는 장소입니다.")
         destination = LOCATIONS[target]
         result.update(
@@ -205,12 +227,16 @@ def resolve_world(
             raise ValueError("그 인물은 현재 장소에 없습니다.")
         if quest["ending"]:
             public_notice = world_effects.notice_for_npc(result, target)
+            expedition_report = (
+                result["npc_knowledge"][target]["facts"].get("expedition_report", {}).get("text")
+            )
             witnessed = (
                 result["npc_knowledge"][target]["facts"].get("seal_aftermath", {}).get("text")
             )
+            recalled = expedition_report or public_notice or witnessed
             narrative = (
-                f"{dict(location['npcs'])[target]}: {public_notice or witnessed}"
-                if public_notice or witnessed
+                f"{dict(location['npcs'])[target]}: {recalled}"
+                if recalled
                 else (
                     f"{dict(location['npcs'])[target]}: 다음 일을 의논하러 왔군요. "
                     "제가 직접 아는 일부터 이야기하겠습니다."
@@ -317,6 +343,8 @@ def resolve_world(
     advance_time(result, minutes)
     if intent == "talk":
         record_episode(result, target, "seal_discussion")
+    if intent == "report_expedition":
+        record_episode(result, "npc_oren", "expedition_report")
     if intent == "followup_check" and target in {"oren_testimony", "safe_route"}:
         record_episode(result, "npc_oren", "aftermath_persuasion")
     result["journal"].append(
@@ -329,7 +357,9 @@ def resolve_world(
         }
     )
     return {
-        "event_type": "PROGRESSION_ACTION_RESOLVED"
+        "event_type": "EXPEDITION_ACTION_RESOLVED"
+        if expedition_result
+        else "PROGRESSION_ACTION_RESOLVED"
         if intent == "train"
         else "RESOURCE_ACTION_RESOLVED"
         if resource_result
@@ -345,11 +375,14 @@ def resolve_world(
             if state.get("quest", {}).get("ending")
             else "greyhaven-seal-v1",
             **(resource_result["payload"] if resource_result else {}),
+            **(expedition_result["payload"] if expedition_result else {}),
             **({"reward_gold": 15} if intent == "resolve_followup" else {}),
         },
         "state": result,
         "narrative": narrative,
-        "dice": resource_result["dice"]
+        "dice": expedition_result["dice"]
+        if expedition_result
+        else resource_result["dice"]
         if resource_result
         else (
             {
