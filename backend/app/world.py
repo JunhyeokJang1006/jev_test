@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from . import followup, progression, resources, tactical
+from . import followup, progression, resources, tactical, world_effects
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -25,6 +25,7 @@ COMMANDS = {
     **resources.COMMANDS,
     **tactical.COMMANDS,
     **progression.COMMANDS,
+    **world_effects.COMMANDS,
     "하를란에게 시장이 보냈다고 거짓말": ("deceive_mayor", "npc_harlan"),
     "시장님이 직접 저를 보냈습니다.": ("deceive_mayor", "npc_harlan"),
     "여관으로 이동": ("travel", "greyhaven_inn"),
@@ -77,8 +78,12 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     if state.get("player", {}).get("hp", 0) <= 0:
         return []
     if state.get("quest", {}).get("ending"):
-        actions = [*followup.available_actions(state), *progression.available_actions(state)]
-        if state.get("followup", {}).get("status") == "active":
+        actions = [
+            *followup.available_actions(state),
+            *progression.available_actions(state),
+            *world_effects.available_actions(state),
+        ]
+        if state.get("followup", {}).get("status") in {"active", "completed"}:
             actions.extend(resources.available_actions(state))
             location = LOCATIONS.get(state.get("location_id"), {})
             for label, (intent, target) in COMMANDS.items():
@@ -125,7 +130,7 @@ def resolve_world(
     resource_intents = {command[0] for command in resources.COMMANDS.values()} | {"train"}
     if (
         intent
-        not in {"travel", "talk", "investigate", "take_seal", "finish_quest"}
+        not in {"travel", "talk", "investigate", "take_seal", "finish_quest", "wait_notice"}
         | followup_intents
         | resource_intents
     ):
@@ -149,7 +154,12 @@ def resolve_world(
     clue = None
     check_result = None
     resource_result = None
-    if intent in resource_intents:
+    if intent == "wait_notice":
+        if targets != ("notice",) or not world_effects.available_actions(result):
+            raise ValueError("현재 기다릴 공고가 없습니다.")
+        minutes = 10
+        narrative = "소문과 공고를 기다리며 10분을 보냈다."
+    elif intent in resource_intents:
         resource_result = (
             progression.apply(result, intent, targets)
             if intent == "train"
@@ -194,9 +204,17 @@ def resolve_world(
         if target not in {npc[0] for npc in location["npcs"]}:
             raise ValueError("그 인물은 현재 장소에 없습니다.")
         if quest["ending"]:
+            public_notice = world_effects.notice_for_npc(result, target)
+            witnessed = (
+                result["npc_knowledge"][target]["facts"].get("seal_aftermath", {}).get("text")
+            )
             narrative = (
-                f"{dict(location['npcs'])[target]}: 다음 일을 의논하러 왔군요. "
-                "제가 직접 아는 일부터 이야기하겠습니다."
+                f"{dict(location['npcs'])[target]}: {public_notice or witnessed}"
+                if public_notice or witnessed
+                else (
+                    f"{dict(location['npcs'])[target]}: 다음 일을 의논하러 왔군요. "
+                    "제가 직접 아는 일부터 이야기하겠습니다."
+                )
             )
             advance_time(result, minutes)
             record_episode(result, target, "aftermath_discussion")

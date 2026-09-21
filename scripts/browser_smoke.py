@@ -214,6 +214,13 @@ def main() -> None:
                         click("성장: 설득의 기술")
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 4")
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("설득 +5")
+                        expect(page.get_by_label("도시 공고")).not_to_contain_text("공고까지")
+                        if action == "하를란에게 봉인 반환":
+                            click("시장으로 이동")
+                        price = 6 if action == "하를란에게 봉인 반환" else 8 if exile else 10
+                        click(f"치유 물약 구매 ({price}골드)")
+                        expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 4")
+                        click("오렌과 대화")
                         page.reload()
                         expect(page.get_by_text("진행: 해결", exact=False)).to_be_visible()
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 4")

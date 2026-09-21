@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 158 passed. 기존 검사와 XP 최초 지급·성장 조건/선택/상한·중복·저장 분기·공개 원장 차단 확인 |
+| API/AI 테스트 | PASS | pytest 175 passed. 기존 검사와 지연 공고 60분 경계·일회성·분기 가격·과거 견적 거부·NPC 공고 기억·복원 확인 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -92,6 +92,10 @@ Chrome에서 전투 시작→방어→격자 칸 클릭→출구 후퇴→휴식
 Sol 독립 검사에서 관련80개 및 전체 check를 재실행해 XP 중복·성장 조건/효과·원장 비공개를 확인했다.
 Chrome 세 비전투 경로에서 XP125→설득 성장→레벨4/설득+5→새로고침 보존을 확인했다.
 경험치·성장 규칙은 자체 규칙이며 다양한 클래스 능력이나 장기 성장 콘텐츠의 완성을 뜻하지 않는다.
+
+지연 세계 결과: 전체175개 및 브라우저 세 분기의 성장→60분 공고→시장 가격 구매→대화가 통과했다.
+Sol 독립 검사45개와 정확한 공고 경계·대화가 기한을 넘기는 경우의 NPC 단독 기억 검증이 통과했다.
+종결 후 이동·회복·대화를 재개할 수 있다. 단일 예약 공고의 구현이며 일반 파벌 AI·경제 시뮬레이션은 아니다.
 
 첫 검사에서 ruff의 app 모듈 분류를 명시하도록 수정했다.
 TestClient 경로의 의존성 deprecation 경고는 httpx ASGITransport 기반 테스트로 변경하여 해소했다.

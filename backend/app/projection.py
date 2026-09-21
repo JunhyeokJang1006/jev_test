@@ -25,7 +25,7 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
     result = pick(
         state,
         "location_id location_name day time hidden elapsed_minutes encounter_enemy_id "
-        "combat_seconds",
+        "combat_seconds market_policy",
     )
     result["player"] = pick(
         state.get("player"),
@@ -35,6 +35,8 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["progression"] = public_progression(state)
+    if "world_effects" in state:
+        result["world_effects"] = pick(state["world_effects"], "effective_at applied notice")
     result["npcs"] = [pick(npc, "id name disposition") for npc in state.get("npcs", [])]
     result["nearby_object_ids"] = strings(state.get("nearby_object_ids", []))
     if "inventory" in state:
@@ -83,7 +85,7 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
         payload,
         "intent target_id enemy_id skill dc roll bonus success ac damage hit "
         "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending "
-        "healing cost reward_gold moved attacked xp_gained level choice",
+        "healing cost reward_gold moved attacked xp_gained level choice world_notice",
     )
     if "damage_rolls" in payload:
         result["damage_rolls"] = [value for value in payload["damage_rolls"] if type(value) is int]

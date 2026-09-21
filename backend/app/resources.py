@@ -3,14 +3,21 @@
 from typing import Any
 
 from .dice import Roller
+from .world_effects import prices
 
 DEFAULT = {"gold": 20, "healing_potions": 2, "camp_supplies": 2, "hit_dice": 2}
 COMMANDS = {
     "치유 물약 사용": ("recover", "potion"),
     "여관에서 짧은 휴식": ("recover", "short_rest"),
     "여관에서 긴 휴식": ("recover", "long_rest"),
-    "치유 물약 구매 (8골드)": ("buy_resource", "healing_potions"),
-    "야영 보급품 구매 (3골드)": ("buy_resource", "camp_supplies"),
+    **{
+        f"치유 물약 구매 ({price}골드)": ("buy_resource", f"healing_potions:{price}")
+        for price in (6, 8, 10)
+    },
+    **{
+        f"야영 보급품 구매 ({price}골드)": ("buy_resource", f"camp_supplies:{price}")
+        for price in (2, 3, 4)
+    },
 }
 
 
@@ -23,7 +30,10 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     player = state.get("player", {})
     if player.get("hp", 0) <= 0 or state.get("combat", {}).get("active"):
         return []
-    if state.get("quest", {}).get("ending") and state.get("followup", {}).get("status") != "active":
+    if state.get("quest", {}).get("ending") and state.get("followup", {}).get("status") not in {
+        "active",
+        "completed",
+    }:
         return []
     resources = state.get("resources", DEFAULT)
     injured = player.get("hp", 0) < player.get("max_hp", 37)
@@ -36,10 +46,10 @@ def available_actions(state: dict[str, Any]) -> list[str]:
         if resources.get("camp_supplies", 0) > 0 and (injured or resources.get("hit_dice", 0) < 2):
             actions.append("여관에서 긴 휴식")
     if state.get("location_id") == "market":
-        for label, (_, target) in COMMANDS.items():
-            price = {"healing_potions": 8, "camp_supplies": 3}.get(target)
-            if price and resources.get("gold", 0) >= price and resources.get(target, 0) < 5:
-                actions.append(label)
+        for item, price in prices(state).items():
+            if resources.get("gold", 0) >= price and resources.get(item, 0) < 5:
+                name = "치유 물약" if item == "healing_potions" else "야영 보급품"
+                actions.append(f"{name} 구매 ({price}골드)")
     return actions
 
 
@@ -54,7 +64,8 @@ def apply(state: dict[str, Any], intent: str, target: str, roller: Roller) -> di
     minutes = 1
     cost = 0
     if intent == "buy_resource":
-        cost = 8 if target == "healing_potions" else 3
+        target, quoted_price = target.split(":")
+        cost = int(quoted_price)
         resources["gold"] -= cost
         resources[target] = resources.get(target, 0) + 1
         narrative = (

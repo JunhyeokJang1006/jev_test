@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
 
-from . import progression, tactical
+from . import progression, tactical, world_effects
 from .dice import Dice, Roller
 from .memory import record_episode
 from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
@@ -52,13 +52,26 @@ def resolve_action(
 ) -> TurnOutcome:
     outcome = _resolve_action(deepcopy(state), proposal, roller=roller)
     gained = progression.reward(state, outcome.state)
+    payload, narrative = dict(outcome.event_payload), outcome.narrative
     if gained:
-        return replace(
-            outcome,
-            event_payload={**outcome.event_payload, "xp_gained": gained},
-            narrative=outcome.narrative + f" 경험치 {gained}을 얻었다.",
+        payload["xp_gained"] = gained
+        narrative += f" 경험치 {gained}을 얻었다."
+    notice = world_effects.advance(outcome.state)
+    if notice:
+        payload["world_notice"] = notice
+        narrative += " " + notice
+        outcome.state.setdefault("journal", []).append(
+            {
+                "action": "world_notice",
+                "target": "market",
+                "text": notice,
+                "day": outcome.state["day"],
+                "time": outcome.state["time"],
+            }
         )
-    return outcome
+        if proposal.intent == "talk" and len(proposal.target_ids) == 1:
+            world_effects.notice_for_npc(outcome.state, proposal.target_ids[0])
+    return replace(outcome, event_payload=payload, narrative=narrative)
 
 
 def _resolve_action(

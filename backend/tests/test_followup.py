@@ -83,7 +83,9 @@ def test_followup_keeps_choice_and_restores_evidence(branch):
     assert turn(campaign, f"성장: {skill}").status_code == 200
     assert campaign["state"]["progression"]["level"] == 4
     assert campaign["state"]["player"]["max_hp"] == 42
-    assert campaign["actions"] == []
+    assert not any(action.startswith("성장:") for action in campaign["actions"])
+    assert any("이동" in action for action in campaign["actions"])
+    assert campaign["state"]["world_effects"]["applied"] is True
     connection = connect()
     state = read_campaign(connection, campaign["id"])["state"]
     connection.close()

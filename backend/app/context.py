@@ -32,6 +32,8 @@ def scene_context(state: dict[str, Any]) -> dict[str, Any]:
         "quest_status": quest.get("status"),
         "followup": state.get("followup"),
         "world_consequences": state.get("world_consequences"),
+        "market_policy": state.get("market_policy"),
+        "world_effects": state.get("world_effects"),
         "recent_public_events": [
             str(entry.get("text", ""))[:500] for entry in state.get("journal", [])[-6:]
         ],
