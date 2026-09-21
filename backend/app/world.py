@@ -3,6 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
+from . import followup
 from .memory import initialize_knowledge, record_episode
 
 LOCATIONS = {
@@ -19,6 +20,7 @@ LOCATIONS = {
     "warehouse": {"name": "강변 창고", "exits": ["market"], "npcs": []},
 }
 COMMANDS = {
+    **followup.COMMANDS,
     "하를란에게 시장이 보냈다고 거짓말": ("deceive_mayor", "npc_harlan"),
     "시장님이 직접 저를 보냈습니다.": ("deceive_mayor", "npc_harlan"),
     "여관으로 이동": ("travel", "greyhaven_inn"),
@@ -66,8 +68,18 @@ def prepare(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def available_actions(state: dict[str, Any]) -> list[str]:
-    if state.get("player", {}).get("hp", 0) <= 0 or state.get("quest", {}).get("ending"):
+    if state.get("player", {}).get("hp", 0) <= 0:
         return []
+    if state.get("quest", {}).get("ending"):
+        actions = followup.available_actions(state)
+        if state.get("followup", {}).get("status") == "active":
+            location = LOCATIONS.get(state.get("location_id"), {})
+            for label, (intent, target) in COMMANDS.items():
+                if intent == "travel" and target in location.get("exits", []):
+                    actions.append(label)
+                if intent == "talk" and target in {npc[0] for npc in location.get("npcs", [])}:
+                    actions.append(label)
+        return actions
     if state.get("combat", {}).get("active"):
         return ["고블린을 공격한다"]
     location = LOCATIONS.get(state.get("location_id"))
@@ -95,7 +107,11 @@ def available_actions(state: dict[str, Any]) -> list[str]:
 
 
 def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) -> dict | None:
-    if intent not in {"travel", "talk", "investigate", "take_seal", "finish_quest"}:
+    followup_intents = {command[0] for command in followup.COMMANDS.values()}
+    if (
+        intent
+        not in {"travel", "talk", "investigate", "take_seal", "finish_quest"} | followup_intents
+    ):
         return None
     if len(targets) != 1:
         raise ValueError("행동 대상은 하나여야 합니다.")
@@ -103,8 +119,10 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
         raise ValueError("전투를 마친 뒤 이동하거나 대화할 수 있습니다.")
     result = prepare(state)
     quest = result["quest"]
-    if quest["ending"]:
-        raise ValueError("이 모험은 끝났습니다. 다른 결말은 이전 저장에서 진행해 주세요.")
+    if quest["ending"] and (intent, targets[0]) not in {
+        COMMANDS[label] for label in available_actions(state) if label in COMMANDS
+    }:
+        raise ValueError("이전 사건은 끝났습니다. 현재 후속 사건의 행동을 선택해 주세요.")
     location_id = result["location_id"]
     location = LOCATIONS.get(location_id)
     if location is None:
@@ -112,7 +130,9 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
     target = targets[0]
     minutes = 1
     clue = None
-    if intent == "travel":
+    if intent in followup_intents:
+        narrative = followup.apply(result, intent, targets)
+    elif intent == "travel":
         if target not in location["exits"]:
             raise ValueError("현재 위치에서 바로 이동할 수 없는 장소입니다.")
         destination = LOCATIONS[target]
@@ -133,12 +153,42 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
         )
         result.pop("combat", None)
         minutes = 5
-        narrative = (
-            f"{destination['name']}에 도착했다. 주변을 조사하거나 사람들에게 물어볼 수 있다."
+        narrative = f"{destination['name']}에 도착했다. " + (
+            "후속 사건의 목표와 가능한 행동을 확인하자."
+            if quest["ending"]
+            else "주변을 조사하거나 사람들에게 물어볼 수 있다."
         )
     elif intent == "talk":
         if target not in {npc[0] for npc in location["npcs"]}:
             raise ValueError("그 인물은 현재 장소에 없습니다.")
+        if quest["ending"]:
+            narrative = (
+                f"{dict(location['npcs'])[target]}: 다음 일을 의논하러 왔군요. "
+                "제가 직접 아는 일부터 이야기하겠습니다."
+            )
+            advance_time(result, minutes)
+            record_episode(result, target, "aftermath_discussion")
+            result["journal"].append(
+                {
+                    "action": intent,
+                    "target": target,
+                    "text": narrative,
+                    "day": result["day"],
+                    "time": result["time"],
+                }
+            )
+            return {
+                "event_type": "WORLD_ACTION_RESOLVED",
+                "event_payload": {
+                    "intent": intent,
+                    "target_id": target,
+                    "minutes": minutes,
+                    "rule_id": "greyhaven-aftermath-v1",
+                },
+                "state": result,
+                "narrative": narrative,
+                "dice": {"outcome": "no_check_required"},
+            }
         memories = result["npc_memories"].setdefault(target, [])
         repeated = "seal_discussed" in memories
         if not repeated:
@@ -234,7 +284,9 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
             "clue": clue,
             "minutes": minutes,
             "ending": quest["ending"],
-            "rule_id": "greyhaven-seal-v1",
+            "rule_id": "greyhaven-aftermath-v1"
+            if state.get("quest", {}).get("ending")
+            else "greyhaven-seal-v1",
         },
         "state": result,
         "narrative": narrative,

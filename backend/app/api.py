@@ -331,7 +331,8 @@ def play_turn(request: TurnRequest) -> dict[str, Any]:
                         "ending": proposal.target_ids[0],
                         "command": command,
                         "consequence": consequences[proposal.target_ids[0]]
-                        + " 현재 모험은 종료됩니다. 다른 선택은 이전 저장에서 진행할 수 있습니다.",
+                        + " 봉인 사건의 선택이 확정되고 후속 사건이 열립니다."
+                        + " 다른 선택은 이전 저장에서 진행할 수 있습니다.",
                     },
                 )
         try:

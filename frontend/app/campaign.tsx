@@ -144,6 +144,12 @@ export default function CampaignPanel() {
       <p>{campaign.state.quest.ending_title ?? (campaign.state.quest.status === "recovered" ? "봉인을 회수했습니다. 누구에게 전달할까요?" : "도난당한 봉인의 행방을 조사하세요.")}</p>
       <p>소지품: {campaign.state.inventory?.includes("royal_seal") ? "왕실 봉인" : "없음"}</p>
     </div>}
+    {campaign?.state.followup && <section aria-label="후속 사건">
+      <h3>{campaign.state.followup.title}</h3>
+      <p>{campaign.state.followup.resolution ?? campaign.state.followup.objective}</p>
+      <p>진행: {campaign.state.followup.status === "completed" ? "해결" : "조사 중"} · 확보한 단서 {campaign.state.followup.evidence.length}/2</p>
+    </section>}
+    {campaign?.state.world_consequences && <p aria-label="세계 변화">통행세: {({ suspended: "징수 잠정 중단", contested: "공개 분쟁", unchanged: "변화 없음" } as Record<string, string>)[campaign.state.world_consequences.tax_collection]} · 피난민: {campaign.state.world_consequences.refugees === "evacuated" ? "피난 완료" : "도시 잔류"}</p>}
     <nav aria-label="가능한 행동">{campaign?.actions?.map(action => <button className="secondary" key={action} type="button" disabled={busy} onClick={() => void sendTurn(action)}>{action}</button>)}</nav>
     <label htmlFor="action">행동</label><textarea id="action" value={input} onChange={(event) => setInput(event.target.value)} disabled={!campaign || busy} />
     <button type="button" onClick={() => void sendTurn()} disabled={!campaign || busy}>{busy ? "판정 중…" : "행동 보내기"}</button>

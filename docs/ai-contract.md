@@ -13,7 +13,12 @@ HTTP 409의 `detail.code=ending_confirmation_required`와 공개 command/ending/
 `confirmed_ending`(law/mercy/exile), 원래 campaign_id/expected_state_version을 전송한다.
 명령/확인값 불일치는 422, 사이에 상태가 바뀐 요청은 409로 거부한다.
 확인값은 멱등 해시에 포함되며 취소는 서버 상태를 바꾸지 않는다.
-현재 엔진의 결말 종료 정책에 대한 안전장치이며, 후속 퀘스트 구현을 대체하지 않는다.
+봉인 사건의 확정 선택에 대한 안전장치다. 확정 뒤 별도의 후속 사건을 시작할 수 있다.
+
+후속 사건은 공개 `followup`(id/title/status/objective/branch/evidence/resolution) 객체로 관리한다.
+원래 `quest.ending`은 보존한다. 기존 저장에 followup이 없어도 확정 선택에서 후속 사건을 시작한다.
+후속 사건 활성 시 서버가 허용하는 이동·대화·증거·해결 명령만 실행하며 과거 봉인 명령은 거부한다.
+결과의 공개 세계 변화와 직접 참여 NPC의 기억은 같은 턴에 저장한다. 부재 NPC에게 자동 전파하지 않는다.
 
 규칙 판정·event·state를 한 transaction으로 commit한 후 서사를 생성한다.
 commit 시점에는 기본 문장과 `narrative_status=pending`이 저장되고,

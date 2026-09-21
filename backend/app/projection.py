@@ -35,6 +35,11 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         result["journal"] = [
             pick(entry, "action target text day time") for entry in state["journal"]
         ]
+    if "followup" in state:
+        result["followup"] = pick(state["followup"], "id title status objective branch resolution")
+        result["followup"]["evidence"] = strings(state["followup"].get("evidence", []))
+    if "world_consequences" in state:
+        result["world_consequences"] = pick(state["world_consequences"], "tax_collection refugees")
     if "combat" in state:
         result["combat"] = pick(
             state["combat"], "active enemy_id enemy_name enemy_hp enemy_ac round result"

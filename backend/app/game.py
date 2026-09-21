@@ -7,7 +7,7 @@ from typing import Any
 
 from .dice import Dice, Roller
 from .memory import record_episode
-from .world import COMMANDS, advance_time, prepare, resolve_world
+from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
 
 
 @dataclass(frozen=True)
@@ -53,7 +53,12 @@ def resolve_action(
     if state.get("player", {}).get("hp", 0) <= 0:
         raise ValueError("전투 불능 상태입니다. 이전 저장을 복원해 주세요.")
     if state.get("quest", {}).get("ending"):
-        raise ValueError("이 모험은 끝났습니다. 이전 저장을 복원할 수 있습니다.")
+        allowed = {COMMANDS[label] for label in available_actions(state) if label in COMMANDS}
+        if (
+            len(proposal.target_ids) != 1
+            or (proposal.intent, proposal.target_ids[0]) not in allowed
+        ):
+            raise ValueError("이전 사건은 끝났습니다. 현재 후속 사건의 행동을 선택해 주세요.")
     if proposal.intent == "deceive_mayor":
         if proposal.target_ids != ("npc_harlan",) or not any(
             npc.get("id") == "npc_harlan" for npc in state.get("npcs", [])

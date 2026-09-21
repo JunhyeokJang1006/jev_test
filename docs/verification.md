@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 81 passed. 기존 플레이·저장 검사와 결말 확인 전 무변경, 확인 명령/버전/멱등성 계약 확인 |
+| API/AI 테스트 | PASS | pytest 86 passed. 기존 플레이·저장 검사와 세 후속 사건, 증거/위치 조건, 원선택 보존·중간 복원·공개 context 확인 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -64,6 +64,12 @@ Astra 검토에서 발견한 초기화/복원 경합과 SQLite offset 정수 초
 오래된 버전과 멱등 키 재사용 거부, 확정 재전송 시 동일 결과를 검사했다.
 Astra 독립 검토에서 관련 13개 테스트 통과, canonical 명령·transaction gate·UI 결속을 확인했다.
 GitHub 최초 커밋의 project-check 실행은 success로 확인했다.
+
+후속 사건: 세 봉인 선택에서 각각 감사/증거 공개/피난 지원으로 이어지는 경로를 구현했다.
+Chrome에서 세 경로 모두 증거 수집→해결→새로고침 후 결과 보존→이전 저장 복원을 확인했다.
+Astra 독립 검사 27개 및 메모리 상태 탐색 588개 assertion에서 허용/금지 행동,
+입력 상태 불변·원래 봉인 선택 보존을 확인했다. 후속 이동 안내와 rule_id 구분도 수정했다.
+현재는 분기별 고정 증거 경로이며, 다중 판정·실패 후 진행·장시간 연쇄 콘텐츠 검증은 남아 있다.
 
 첫 검사에서 ruff의 app 모듈 분류를 명시하도록 수정했다.
 TestClient 경로의 의존성 deprecation 경고는 httpx ASGITransport 기반 테스트로 변경하여 해소했다.

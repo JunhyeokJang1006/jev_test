@@ -156,6 +156,25 @@ def main() -> None:
                         expect(page.get_by_text(title, exact=True)).to_be_visible()
                         page.reload()
                         expect(page.get_by_text(title, exact=True)).to_be_visible()
+                        click("후속 사건 시작")
+                        if action != "봉인을 가지고 도시 떠나기":
+                            click("시장으로 이동")
+                        exile = action == "봉인을 가지고 도시 떠나기"
+                        click("오렌에게 안전한 피난로 확인" if exile else "오렌의 통행세 증언 기록")
+                        click("창고로 이동")
+                        click("창고에서 피난 보급품 확보" if exile else "창고의 통행세 장부 확보")
+                        click("시장으로 이동")
+                        if action == "하를란에게 봉인 반환":
+                            click("여관으로 이동")
+                            click("하를란에게 감사 증거 제출")
+                        elif exile:
+                            click("피난민과 함께 성문 통과")
+                        else:
+                            click("시장에서 통행세 증거 공개")
+                        expect(page.get_by_text("진행: 해결", exact=False)).to_be_visible()
+                        expect(page.get_by_label("세계 변화")).to_be_visible()
+                        page.reload()
+                        expect(page.get_by_text("진행: 해결", exact=False)).to_be_visible()
                         click("복원")
                         expect(page.get_by_text("소지품: 왕실 봉인", exact=True)).to_be_visible()
                     page.evaluate("localStorage.clear()")
@@ -185,7 +204,8 @@ def main() -> None:
                     assert not failures, failures
                     browser.close()
                 print(
-                    "브라우저 PASS: 지도 NPC/출구 클릭, 3개 결말, 새로고침, 반복 복원, "
+                    "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건 완주, "
+                    "새로고침, 반복 복원, "
                     "서버 저장 선택·브라우저 저장 초기화 후 복원, 모바일 지도 클릭, JS 오류 없음"
                 )
             finally:

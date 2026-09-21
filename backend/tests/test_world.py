@@ -76,7 +76,7 @@ def test_complete_each_ending_and_restore_before_choice(campaign, ending, action
     assert turn(campaign, action, confirmed_ending=ending).status_code == 200
     assert campaign["state"]["quest"]["ending"] == ending
     assert campaign["state"]["quest"]["status"] == "completed"
-    assert campaign["actions"] == []
+    assert campaign["actions"] == ["후속 사건 시작"]
     assert turn(campaign, "주변 조사").status_code == 422
     restored = request(
         "POST", f"/api/campaign/{campaign['id']}/load", json={"snapshot_id": saved["snapshot_id"]}
