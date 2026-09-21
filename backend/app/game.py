@@ -1,0 +1,297 @@
+"""주사위 주입으로 재현 가능한 서버 권위 판정. 간소화된 자체 전투 규칙."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from .dice import Dice, Roller
+from .memory import record_episode
+from .world import COMMANDS, advance_time, prepare, resolve_world
+
+
+@dataclass(frozen=True)
+class ActionProposal:
+    intent: str
+    action_type: str
+    target_ids: tuple[str, ...]
+    skill: str | None
+    difficulty_band: str | None
+
+
+@dataclass(frozen=True)
+class TurnOutcome:
+    event_type: str
+    event_payload: dict[str, Any]
+    state: dict[str, Any]
+    narrative: str
+    dice: dict[str, int | str]
+
+
+def interpret_mock(text: str) -> ActionProposal:
+    normalized = text.strip().lower()
+    if normalized in COMMANDS:
+        intent, target = COMMANDS[normalized]
+        return ActionProposal(intent, "exploration", (target,), None, None)
+    stealth_words = ("숨", "잠입", "은신", "그림자", "몰래")
+    if any(word in normalized for word in stealth_words):
+        return ActionProposal(
+            "hide_beside_door", "exploration", ("door_inn",), "stealth", "moderate"
+        )
+    if ("고블린" in normalized or "goblin" in normalized) and any(
+        word in normalized for word in ("공격", "검을", "베어", "휘두르", "찌른", "attack")
+    ):
+        return ActionProposal("basic_attack", "attack", ("goblin_001",), None, None)
+    return ActionProposal("describe_action", "exploration", (), None, None)
+
+
+def resolve_action(
+    state: dict[str, Any], proposal: ActionProposal, *, roller: Roller | None = None
+) -> TurnOutcome:
+    roller = roller if roller is not None else Dice()
+    next_state = dict(state)
+    if state.get("player", {}).get("hp", 0) <= 0:
+        raise ValueError("전투 불능 상태입니다. 이전 저장을 복원해 주세요.")
+    if state.get("quest", {}).get("ending"):
+        raise ValueError("이 모험은 끝났습니다. 이전 저장을 복원할 수 있습니다.")
+    if proposal.intent == "deceive_mayor":
+        if proposal.target_ids != ("npc_harlan",) or not any(
+            npc.get("id") == "npc_harlan" for npc in state.get("npcs", [])
+        ):
+            raise ValueError("현재 장소에 하를란이 없습니다.")
+        if state.get("combat", {}).get("active"):
+            raise ValueError("전투 중에는 이 대화를 할 수 없습니다.")
+        result = prepare(state)
+        claims = result["npc_knowledge"]["npc_harlan"]["claims"]
+        previous = claims.get("mayor_sent_player")
+        if previous:
+            return TurnOutcome(
+                "NPC_CLAIM_RECALLED",
+                {"intent": proposal.intent, "target_id": "npc_harlan", "resolved": True},
+                result,
+                "Harlan: 그 주장은 이미 들었소. 새로운 증거가 없다면 내 판단은 같소.",
+                {"outcome": "no_check_required"},
+            )
+        roll = roller.roll(20)
+        bonus = int(result["player"].get("deception_bonus", 3))
+        success = roll + bonus >= 14
+        claims["mayor_sent_player"] = {
+            "reaction": "believed" if success else "doubted",
+            "source": "player_assertion",
+            "verified": False,
+            "roll": roll,
+            "bonus": bonus,
+            "dc": 14,
+        }
+        disposition = "trusting" if success else "suspicious"
+        for npc in result["npcs"]:
+            if npc["id"] == "npc_harlan":
+                npc["disposition"] = disposition
+        result["npc_relationships"]["npc_harlan"] = disposition
+        advance_time(result, 1)
+        record_episode(result, "npc_harlan", "mayor_claim")
+        narrative = (
+            "Harlan: 시장님의 사절이라고? 일단 믿겠소. 아직 확인은 하지 못했지만."
+            if success
+            else "Harlan: 시장님이 보냈다는 말만으로는 믿을 수 없소."
+        )
+        result["journal"].append(
+            {
+                "action": "deceive_mayor",
+                "target": "npc_harlan",
+                "text": narrative,
+                "day": result["day"],
+                "time": result["time"],
+            }
+        )
+        return TurnOutcome(
+            "NPC_CLAIM_RESOLVED",
+            {
+                "intent": proposal.intent,
+                "target_id": "npc_harlan",
+                "skill": "deception",
+                "roll": roll,
+                "bonus": bonus,
+                "dc": 14,
+                "success": success,
+                "rule_id": "greyhaven-mayor-deception-v1",
+            },
+            result,
+            narrative,
+            {
+                "roll": roll,
+                "bonus": bonus,
+                "total": roll + bonus,
+                "dc": 14,
+                "outcome": "success" if success else "failure",
+            },
+        )
+    world_outcome = resolve_world(state, proposal.intent, proposal.target_ids)
+    if world_outcome is not None:
+        return TurnOutcome(**world_outcome)
+    if proposal.intent == "basic_attack":
+        if proposal.target_ids != ("goblin_001",):
+            raise ValueError("공격 대상이 현재 조우와 일치하지 않습니다.")
+        if (
+            state.get("location_id") != "greyhaven_inn"
+            or state.get("encounter_enemy_id") != "goblin_001"
+        ):
+            return TurnOutcome(
+                "COMBAT_NOT_AVAILABLE",
+                {"target_id": "goblin_001"},
+                next_state,
+                "이곳에는 공격할 적이 보이지 않는다.",
+                {"outcome": "no_state_change"},
+            )
+        combat = dict(
+            state.get("combat")
+            or {
+                "active": True,
+                "enemy_id": "goblin_001",
+                "enemy_name": "Goblin",
+                "enemy_hp": 7,
+                "enemy_ac": 12,
+            }
+        )
+        if combat.get("enemy_hp", 0) <= 0:
+            return TurnOutcome(
+                "COMBAT_ALREADY_WON",
+                {"enemy_id": "goblin_001"},
+                next_state,
+                "고블린은 이미 쓰러져 있다.",
+                {"outcome": "no_state_change"},
+            )
+        roll = roller.roll(20)
+        bonus = int(state["player"].get("attack_bonus", 5))
+        ac = int(combat.get("enemy_ac", 12))
+        hit = roll == 20 or (roll != 1 and roll + bonus >= ac)
+        critical = roll == 20
+        damage_rolls = [roller.roll(8) for _ in range(2 if critical else 1)] if hit else []
+        damage = (
+            max(0, sum(damage_rolls) + int(state["player"].get("damage_bonus", 3))) if hit else 0
+        )
+        enemy_hp = max(0, int(combat.get("enemy_hp", 0)) - (damage if hit else 0))
+        combat["enemy_hp"] = enemy_hp
+        combat["active"] = enemy_hp > 0
+        combat["round"] = int(combat.get("round", 0)) + 1
+        enemy_attack = None
+        player = dict(state["player"])
+        if enemy_hp > 0:
+            enemy_roll = roller.roll(20)
+            enemy_hit = enemy_roll == 20 or (
+                enemy_roll != 1 and enemy_roll + 4 >= int(player.get("ac", 17))
+            )
+            enemy_damage_rolls = (
+                [roller.roll(6) for _ in range(2 if enemy_roll == 20 else 1)] if enemy_hit else []
+            )
+            enemy_damage = sum(enemy_damage_rolls) + 2 if enemy_hit else 0
+            player["hp"] = max(0, int(player["hp"]) - enemy_damage)
+            enemy_attack = {
+                "roll": enemy_roll,
+                "bonus": 4,
+                "ac": int(player.get("ac", 17)),
+                "hit": enemy_hit,
+                "critical": enemy_roll == 20,
+                "damage_rolls": enemy_damage_rolls,
+                "damage_bonus": 2,
+                "damage": enemy_damage,
+                "remaining_hp": player["hp"],
+            }
+        if player["hp"] == 0:
+            combat["active"] = False
+            combat["result"] = "defeat"
+        elif enemy_hp == 0:
+            combat["result"] = "victory"
+        else:
+            combat["result"] = "ongoing"
+        next_state["player"] = player
+        next_state["hidden"] = False
+        next_state["combat"] = combat
+        narrative = (
+            f"공격이 명중해 고블린에게 {damage} 피해를 입혔다." if hit else "공격이 빗나갔다."
+        )
+        if enemy_attack:
+            narrative += (
+                f" 고블린의 반격으로 {enemy_attack['damage']} 피해를 입었다."
+                if enemy_attack["hit"]
+                else " 고블린의 반격은 빗나갔다."
+            )
+        if combat["result"] == "victory":
+            narrative += " 고블린이 쓰러졌다. 전투에서 승리했다."
+        elif combat["result"] == "defeat":
+            narrative += " 쓰러져 더 이상 싸울 수 없다. 저장을 복원할 수 있다."
+        return TurnOutcome(
+            "PLAYER_ATTACKED",
+            {
+                "target_id": "goblin_001",
+                "roll": roll,
+                "bonus": bonus,
+                "ac": ac,
+                "damage": damage if hit else 0,
+                "hit": hit,
+                "remaining_hp": enemy_hp,
+                "critical": critical,
+                "damage_rolls": damage_rolls,
+                "damage_bonus": int(state["player"].get("damage_bonus", 3)),
+                "enemy_attack": enemy_attack,
+                "rule_id": "greyhaven-combat-v2",
+                "result": combat["result"],
+            },
+            next_state,
+            narrative,
+            {
+                "roll": roll,
+                "bonus": bonus,
+                "total": roll + bonus,
+                "ac": ac,
+                "damage": damage if hit else 0,
+                "outcome": "hit" if hit else "miss",
+            },
+        )
+    if proposal.intent != "hide_beside_door":
+        return TurnOutcome(
+            "PLAYER_ACTION_RECORDED",
+            {"intent": proposal.intent, "resolved": False},
+            next_state,
+            "행동의 의도는 이해했지만, 아직 이 행동을 판정할 규칙이 준비되지 않았다. "
+            "어떻게 하겠는가?",
+            {"outcome": "no_state_change"},
+        )
+    if state.get("location_id") != "greyhaven_inn" or "door_inn" not in state.get(
+        "nearby_object_ids", []
+    ):
+        raise ValueError("현재 장면에서 해당 은신 대상을 찾을 수 없습니다.")
+    if proposal.target_ids != ("door_inn",):
+        raise ValueError("은신 대상이 현재 장면과 일치하지 않습니다.")
+    if state.get("combat", {}).get("active"):
+        raise ValueError("현재 전투에서는 공격 행동을 선택해야 합니다.")
+    roll, bonus, dc = roller.roll(20), int(state["player"].get("stealth_bonus", 5)), 14
+    total = roll + bonus
+    success = total >= dc
+    next_state["hidden"] = success
+    return TurnOutcome(
+        "PLAYER_STEALTH_CHECK",
+        {
+            "intent": proposal.intent,
+            "skill": "stealth",
+            "dc": dc,
+            "roll": roll,
+            "bonus": bonus,
+            "success": success,
+            "rule_id": "greyhaven-door-stealth-v2",
+        },
+        next_state,
+        (
+            "그림자 속으로 몸을 낮추자 젖은 외투 자락이 문틀에 스친다. "
+            "경비병은 발소리를 듣지 못한 채 지나간다."
+            if success
+            else "몸을 숨기려는 순간 바닥의 낡은 판자가 삐걱인다. 경비병이 이쪽을 돌아본다."
+        ),
+        {
+            "roll": roll,
+            "bonus": bonus,
+            "total": total,
+            "dc": dc,
+            "outcome": "success" if success else "failure",
+        },
+    )

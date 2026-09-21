@@ -1,0 +1,52 @@
+# 초기 규칙 범위
+
+현재 엔진은 실제 서버 주사위 기반 은신과 간소화된 자체 전투를 구현한다.
+ruleset ID는 srd-5.2.1-subset-v1, 자체 규칙은 별도 파일/version으로 구분한다.
+반입 시 원전 조항과 적합성 테스트를 대조하고 완전한 SRD 준수를 미리 선언하지 않는다.
+
+## 현재 구현된 자체 규칙
+
+`greyhaven-door-stealth-v2`: d20 + 캐릭터 stealth_bonus와 시나리오 DC14 비교.
+자연 1/20은 능력 판정에서 자동 실패/성공이 아니다. 대상은 현재 여관의 door_inn으로 검증한다.
+
+`greyhaven-combat-v2`: 한 행동은 플레이어 공격 후 생존한 고블린의 반격으로 구성한다.
+플레이어는 d20 + attack_bonus(기존 저장의 기본값 5), 피해 d8 + damage_bonus(기본값 3).
+고블린은 d20+4, 피해 d6+2. 자연1은 공격 실패, 자연20은 명중하며 피해 주사위만 두 배로 굴린다.
+플레이어 공격으로 적 HP가 0이면 반격하지 않는다. 플레이어 HP가 0이면 패배하고 후속 행동을 거부한다.
+공격은 은신을 해제한다. 전투 중 은신은 아직 지원하지 않아 명시적으로 거부한다.
+initiative, 이동, death save, 우위/불리점은 후속이며 이 모드를 전체 SRD 전투로 표시하지 않는다.
+재시도는 저장된 결과를 사용한다. event에 공격/반격 주사위·피해 주사위·수정치·남은 HP·rule ID를 기록한다.
+실서비스 RNG는 secrets 기반이며 테스트는 명시적으로 주사위를 주입한다.
+
+## 구현 순서
+
+1. dice, 능력 수정치, skill check, advantage/disadvantage, DC.
+2. 상태 플래그, 이동, 아이템 소비, HP.
+3. initiative, action, movement, 기본 공격/피해, 전투 불능/종료.
+4. 선택한 encounter에 필요한 save, conditions, death save.
+
+초기 캐릭터는 level3·class1개다. 미지원 클래스 능력을 사용 가능하게 표시하지 않는다.
+전체 주문, bonus action/reaction 전체, concentration 등은 MVP에 필요한 범위로 제한한다.
+미지원 행동은 상태 변경 없이 설명하며 조용히 다른 규칙으로 바꾸지 않는다.
+
+## 결정성
+
+d20 생값, 수정치, DC/AC, rule ID, 결과를 event에 기록한다.
+테스트는 RNG를 주입하고 seed나 생성 순서에 암묵적으로 의존하지 않는다.
+자연1/20은 판정 종류별로 처리하며 skill check에 공격 치명타 규칙을 적용하지 않는다.
+
+difficulty band 초기 매핑안은 trivial=5, easy=10, moderate=15, hard=20,
+very_hard=25, nearly_impossible=30이다. 구현용 category 이름과의 매핑이다.
+engine의 scenario override는 출처/이유/version을 기록하여 우선한다.
+원문의 복합 곡예 행동이나 injured_arm/-2는 자동 SRD 규칙이 아닌 자체 규칙 후보로 둔다.
+
+grid는 정수(x,y),1 tile=5ft다. 경로/엄폐/인접 판정은 서버가 담당한다.
+대각 이동 등 세부 규칙은 RULES-001에서 원전과 대조하여 version이 있는 정책으로 고정한다.
+pixel과 게임 거리를 분리하여 화면 배율이 사거리에 영향을 주지 않게 한다.
+
+## 출처
+
+공식 SRD: https://www.dndbeyond.com/srd . 현재 데이터는 미반입이다.
+Open5e 채택 시 수록 판본/출처를 확인하고5.1과5.2.1을 혼합하지 않는다.
+공식 페이지와 가져온 PDF의 공개 조건을 확인하여 표시한다.
+반입 상태는 THIRD_PARTY_LICENSES.md에서 관리한다.

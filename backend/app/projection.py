@@ -1,0 +1,74 @@
+"""공개 응답 경계. 새 내부 필드는 명시적으로 등록하기 전까지 공개하지 않는다."""
+
+from typing import Any
+
+
+def pick(value: Any, fields: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        key: value[key]
+        for key in fields.split()
+        if key in value and (value[key] is None or isinstance(value[key], (str, int, float, bool)))
+    }
+
+
+def strings(value: Any) -> list[str]:
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+def public_state(state: dict[str, Any]) -> dict[str, Any]:
+    result = pick(
+        state, "location_id location_name day time hidden elapsed_minutes encounter_enemy_id"
+    )
+    result["player"] = pick(
+        state.get("player"), "id name hp max_hp ac stealth_bonus attack_bonus damage_bonus"
+    )
+    result["npcs"] = [pick(npc, "id name disposition") for npc in state.get("npcs", [])]
+    result["nearby_object_ids"] = strings(state.get("nearby_object_ids", []))
+    if "inventory" in state:
+        result["inventory"] = strings(state["inventory"])
+    if "quest" in state:
+        result["quest"] = pick(state["quest"], "id title status ending ending_title")
+        result["quest"]["clues"] = strings(state["quest"].get("clues", []))
+    if "journal" in state:
+        result["journal"] = [
+            pick(entry, "action target text day time") for entry in state["journal"]
+        ]
+    if "combat" in state:
+        result["combat"] = pick(
+            state["combat"], "active enemy_id enemy_name enemy_hp enemy_ac round result"
+        )
+    return result
+
+
+def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    result = pick(
+        payload,
+        "intent target_id enemy_id skill dc roll bonus success ac damage hit "
+        "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending",
+    )
+    if "damage_rolls" in payload:
+        result["damage_rolls"] = [value for value in payload["damage_rolls"] if type(value) is int]
+    if "enemy_attack" in payload:
+        result["enemy_attack"] = (
+            public_payload(payload["enemy_attack"])
+            if isinstance(payload["enemy_attack"], dict)
+            else None
+        )
+    return result
+
+
+def public_turn(turn: dict[str, Any]) -> dict[str, Any]:
+    result = pick(turn, "turn_id state_version narrative narrative_status")
+    result["state"] = public_state(turn.get("state", {}))
+    result["dice"] = pick(turn.get("dice"), "roll bonus total dc ac damage outcome")
+    event = turn.get("event", {})
+    result["event"] = {
+        **pick(event, "type"),
+        "payload": public_payload(event.get("payload", {})),
+    }
+    result["ai"] = pick(turn.get("ai"), "interpreter narrator")
+    result["jev"] = pick(turn.get("jev"), "enabled status label confidence")
+    result["actions"] = strings(turn.get("actions", []))
+    return result
