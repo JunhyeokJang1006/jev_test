@@ -9,6 +9,7 @@ from .dice import Roller
 COMMANDS = {
     "전투 시작": ("start_combat", "goblin_001"),
     "고블린을 공격한다": ("basic_attack", "goblin_001"),
+    "두 번째 고블린을 공격한다": ("basic_attack", "goblin_002"),
     "전투 이동: 위": ("combat_move", "up"),
     "전투 이동: 아래": ("combat_move", "down"),
     "전투 이동: 왼쪽": ("combat_move", "left"),
@@ -54,7 +55,38 @@ def _combat(state: dict) -> dict:
     }
     for key, value in defaults.items():
         combat.setdefault(key, value)
+    if "enemies" not in combat:
+        combat["enemies"] = [
+            {key: combat[f"enemy_{key}"] for key in ("id", "name", "hp", "ac", "x", "y")}
+        ]
+        if not state.get("combat"):
+            combat["enemies"].append(
+                {
+                    "id": "goblin_002",
+                    "name": "Goblin Scout",
+                    "hp": 7,
+                    "ac": 12,
+                    "x": 4,
+                    "y": 4,
+                }
+            )
+    _sync_legacy(combat)
     return combat
+
+
+def _sync_legacy(combat: dict) -> None:
+    first = next((enemy for enemy in combat["enemies"] if enemy["id"] == "goblin_001"), None)
+    if first is not None:
+        for key in ("id", "name", "hp", "ac", "x", "y"):
+            combat[f"enemy_{key}"] = first[key]
+
+
+def _occupied(combat: dict, *, excluding: str | None = None) -> set[tuple[int, int]]:
+    return {
+        (enemy["x"], enemy["y"])
+        for enemy in combat["enemies"]
+        if enemy["hp"] > 0 and enemy["id"] != excluding
+    }
 
 
 def _position(combat: dict, actor: str) -> tuple[int, int]:
@@ -64,7 +96,7 @@ def _position(combat: dict, actor: str) -> tuple[int, int]:
 def normalized_combat(state: dict) -> dict:
     """공개 투영용 사본: 진행 중인 옛 전투만 기본 격자 정보를 보완한다."""
     existing = state.get("combat") or {}
-    return _combat(state) if existing.get("active") else deepcopy(existing)
+    return _combat(state) if existing else {}
 
 
 def _distance(a: tuple, b: tuple) -> int:
@@ -82,13 +114,24 @@ def available_actions(state: dict) -> list[str]:
     if not existing.get("active"):
         return [] if existing else ["전투 시작"]
     combat = _combat(state)
-    player, enemy = _position(combat, "player"), _position(combat, "enemy")
-    actions = ["고블린을 공격한다"] if _distance(player, enemy) == 1 else []
+    player = _position(combat, "player")
+    actions = [
+        label
+        for label, (intent, target) in COMMANDS.items()
+        if intent == "basic_attack"
+        and any(
+            enemy["id"] == target
+            and enemy["hp"] > 0
+            and _distance(player, (enemy["x"], enemy["y"])) == 1
+            for enemy in combat["enemies"]
+        )
+    ]
+    occupied = _occupied(combat)
     for label, (intent, direction) in COMMANDS.items():
         if intent == "combat_move":
             dx, dy = DIRECTIONS[direction]
             point = (player[0] + dx, player[1] + dy)
-            if _walkable(point) and point != enemy:
+            if _walkable(point) and point not in occupied:
                 actions.append(label)
     actions.append("방어 태세")
     if player == (0, 2):
@@ -96,9 +139,10 @@ def available_actions(state: dict) -> list[str]:
     return actions
 
 
-def _enemy_response(state: dict, roller: Roller, *, defend: bool = False) -> dict:
+def _enemy_response(state: dict, actor: dict, roller: Roller, *, defend: bool = False) -> dict:
     combat = state["combat"]
-    player, enemy = _position(combat, "player"), _position(combat, "enemy")
+    player, enemy = _position(combat, "player"), (actor["x"], actor["y"])
+    occupied = _occupied(combat, excluding=actor["id"])
     origin = enemy
     if _distance(player, enemy) > 1:
         queue = deque([(enemy, [])])
@@ -107,14 +151,24 @@ def _enemy_response(state: dict, roller: Roller, *, defend: bool = False) -> dic
             point, path = queue.popleft()
             if _distance(point, player) == 1:
                 enemy = path[0]
-                combat["enemy_x"], combat["enemy_y"] = enemy
+                actor["x"], actor["y"] = enemy
                 break
             for dx, dy in DIRECTIONS.values():
                 neighbor = point[0] + dx, point[1] + dy
-                if _walkable(neighbor) and neighbor != player and neighbor not in seen:
+                if (
+                    _walkable(neighbor)
+                    and neighbor != player
+                    and neighbor not in occupied
+                    and neighbor not in seen
+                ):
                     seen.add(neighbor)
                     queue.append((neighbor, [*path, neighbor]))
-    response: dict[str, Any] = {"moved": enemy != origin, "from": list(origin), "to": list(enemy)}
+    response: dict[str, Any] = {
+        "enemy_id": actor["id"],
+        "moved": enemy != origin,
+        "from": list(origin),
+        "to": list(enemy),
+    }
     if _distance(player, enemy) != 1:
         response["attacked"] = False
         return response
@@ -141,6 +195,16 @@ def _enemy_response(state: dict, roller: Roller, *, defend: bool = False) -> dic
     return response
 
 
+def _enemy_side_response(state: dict, roller: Roller, *, defend: bool = False) -> list[dict]:
+    responses = []
+    for actor in state["combat"]["enemies"]:
+        if state["player"]["hp"] <= 0:
+            break
+        if actor["hp"] > 0:
+            responses.append(_enemy_response(state, actor, roller, defend=defend))
+    return responses
+
+
 def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict:
     """검증 실패는 입력이나 주사위를 변경하지 않고 예외를 발생시킨다."""
     if len(targets) != 1 or (intent, targets[0]) not in COMMANDS.values():
@@ -157,11 +221,16 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
         raise ValueError("이미 전투 중입니다.")
     result = deepcopy(state)
     combat = result["combat"] = _combat(state)
+    if intent == "basic_attack" and not any(
+        enemy["id"] == targets[0] and enemy["hp"] > 0 for enemy in combat["enemies"]
+    ):
+        raise ValueError("존재하지 않거나 쓰러진 적은 공격할 수 없습니다.")
     payload: dict[str, Any] = {
         "intent": intent,
         "target_id": targets[0],
-        "rule_id": "greyhaven-tactical-v1",
+        "rule_id": "greyhaven-tactical-v2",
         "enemy_attack": None,
+        "enemy_attacks": [],
     }
     dice: dict[str, Any] = {"outcome": "no_check_required"}
     event_type = "COMBAT_ACTION_RESOLVED"
@@ -178,7 +247,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
         }
         payload["initiative"] = deepcopy(combat["initiative"])
         if first == "enemy":
-            payload["enemy_attack"] = _enemy_response(result, roller)
+            payload["enemy_attacks"] = _enemy_side_response(result, roller)
             combat["elapsed_seconds"] += 6
         event_type = "COMBAT_STARTED"
         narrative = "전투가 시작됐다. 격자에서 이동해 적에게 접근할 수 있다."
@@ -199,15 +268,16 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             result["encounter_enemy_id"] = None
             narrative = "출구로 후퇴했다. 이번 조우의 재진입은 지원하지 않는다."
         elif intent == "basic_attack":
+            enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == targets[0])
             roll = roller.roll(20)
-            ac = int(combat["enemy_ac"])
+            ac = int(enemy["ac"])
             bonus = int(result["player"].get("attack_bonus", 5))
             damage_bonus = int(result["player"].get("damage_bonus", 3))
             hit = roll == 20 or (roll != 1 and roll + bonus >= ac)
             damage_rolls = [roller.roll(8) for _ in range(2 if roll == 20 else 1)] if hit else []
             damage = max(0, sum(damage_rolls) + damage_bonus) if hit else 0
-            combat["enemy_hp"] = max(0, combat["enemy_hp"] - damage)
-            if combat["enemy_hp"] == 0:
+            enemy["hp"] = max(0, enemy["hp"] - damage)
+            if all(actor["hp"] <= 0 for actor in combat["enemies"]):
                 combat.update(active=False, result="victory")
             payload.update(
                 roll=roll,
@@ -218,7 +288,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
                 damage=damage,
                 damage_rolls=damage_rolls,
                 damage_bonus=damage_bonus,
-                remaining_hp=combat["enemy_hp"],
+                remaining_hp=enemy["hp"],
             )
             dice = {
                 "roll": roll,
@@ -229,19 +299,26 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
                 "outcome": "hit" if hit else "miss",
             }
             event_type = "PLAYER_ATTACKED"
-            narrative = f"고블린에게 {damage} 피해를 입혔다." if hit else "공격이 빗나갔다."
+            narrative = (
+                f"{enemy['name']}에게 {damage} 피해를 입혔다." if hit else "공격이 빗나갔다."
+            )
         combat["round"] += 1
         combat["elapsed_seconds"] += 6
         if combat["active"]:
-            payload["enemy_attack"] = _enemy_response(
+            payload["enemy_attacks"] = _enemy_side_response(
                 result, roller, defend=intent == "combat_defend"
             )
-    response = payload["enemy_attack"]
-    if response:
+    _sync_legacy(combat)
+    responses = payload["enemy_attacks"]
+    payload["enemy_attack"] = responses[0] if responses else None
+    for response in responses:
+        enemy_name = next(
+            enemy["name"] for enemy in combat["enemies"] if enemy["id"] == response["enemy_id"]
+        )
         if response.get("attacked"):
-            narrative += f" 고블린의 공격으로 {response['damage']} 피해를 입었다."
+            narrative += f" {enemy_name}의 공격으로 {response['damage']} 피해를 입었다."
         elif response["moved"]:
-            narrative += " 고블린이 한 칸 접근했다."
+            narrative += f" {enemy_name}이 한 칸 접근했다."
     if combat["result"] == "victory":
         narrative += " 고블린이 쓰러졌다. 전투에서 승리했다."
     elif combat["result"] == "defeat":

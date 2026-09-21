@@ -77,6 +77,9 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
             and len(point) == 2
             and all(type(v) is int for v in point)
         ]
+        result["combat"]["enemies"] = [
+            pick(enemy, "id name hp ac x y") for enemy in combat.get("enemies", [])
+        ]
     return result
 
 
@@ -111,6 +114,12 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(payload["enemy_attack"], dict)
             else None
         )
+    if "enemy_attacks" in payload:
+        result["enemy_attacks"] = [
+            public_payload(attack)
+            for attack in payload["enemy_attacks"]
+            if isinstance(attack, dict)
+        ]
     return result
 
 

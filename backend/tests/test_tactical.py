@@ -32,6 +32,7 @@ def act(state, intent, target, *rolls):
 
 
 def active(state, *, adjacent=False):
+    """저장된 기존 단일 적 전투 fixture."""
     state["combat"] = {
         "active": True,
         "enemy_hp": 7,
@@ -203,3 +204,158 @@ def test_unavailable_scene_rejected_without_rng(state, patch):
     assert available_actions(state) == []
     with pytest.raises(ValueError):
         act(state, "start_combat", "goblin_001")
+
+
+def multi_active(state, *, adjacent=False):
+    result = act(state, "start_combat", "goblin_001", 10, 10)["state"]
+    if adjacent:
+        result["combat"]["enemies"][0].update(x=2, y=2)
+        result["combat"]["enemies"][1].update(x=1, y=3)
+    return result
+
+
+def test_new_encounter_has_two_enemies_and_versioned_events(state):
+    result = act(state, "start_combat", "goblin_001", 10, 10)
+    assert result["state"]["combat"]["enemies"] == [
+        {"id": "goblin_001", "name": "Goblin", "hp": 7, "ac": 12, "x": 4, "y": 2},
+        {"id": "goblin_002", "name": "Goblin Scout", "hp": 7, "ac": 12, "x": 4, "y": 4},
+    ]
+    assert result["event_payload"]["rule_id"] == "greyhaven-tactical-v2"
+    assert result["event_payload"]["enemy_attacks"] == []
+
+
+def test_enemy_side_initiative_moves_both_and_counts_six_seconds(state):
+    roller = Rolls(1, 20)
+    result = resolve(state, "start_combat", ("goblin_001",), roller=roller)
+    assert roller.used == [(20, 1), (20, 20)]
+    attacks = result["event_payload"]["enemy_attacks"]
+    assert [attack["enemy_id"] for attack in attacks] == ["goblin_001", "goblin_002"]
+    assert all(attack["moved"] and not attack["attacked"] for attack in attacks)
+    assert result["event_payload"]["enemy_attack"] == attacks[0]
+    assert result["state"]["combat"]["elapsed_seconds"] == 6
+
+
+def test_second_target_uses_its_own_hp_and_ac_and_preserves_source(state):
+    state = multi_active(state, adjacent=True)
+    state["combat"]["enemies"][1]["ac"] = 99
+    before = deepcopy(state)
+    assert "두 번째 고블린을 공격한다" in available_actions(state)
+    result = act(state, "basic_attack", "goblin_002", 20, 2, 2, 1)
+    combat = result["state"]["combat"]
+    assert [enemy["hp"] for enemy in combat["enemies"]] == [7, 0]
+    assert combat["enemy_hp"] == 7
+    assert combat["active"] and combat["result"] == "ongoing"
+    assert result["event_payload"]["ac"] == 99
+    assert [attack["enemy_id"] for attack in result["event_payload"]["enemy_attacks"]] == [
+        "goblin_001"
+    ]
+    assert state == before
+
+
+def test_first_death_does_not_win_and_final_death_has_no_response(state):
+    state = multi_active(state, adjacent=True)
+    first = act(state, "basic_attack", "goblin_001", 12, 4, 1)
+    combat = first["state"]["combat"]
+    assert combat["enemy_hp"] == 0
+    assert combat["active"] and combat["result"] == "ongoing"
+    assert [attack["enemy_id"] for attack in first["event_payload"]["enemy_attacks"]] == [
+        "goblin_002"
+    ]
+    last = act(first["state"], "basic_attack", "goblin_002", 12, 4)
+    assert last["state"]["combat"]["result"] == "victory"
+    assert not last["state"]["combat"]["active"]
+    assert last["event_payload"]["enemy_attacks"] == []
+    assert last["event_payload"]["enemy_attack"] is None
+
+
+@pytest.mark.parametrize(
+    "target,dead", [("goblin_002", False), ("goblin_002", True), ("unknown", False)]
+)
+def test_invalid_multi_target_rejects_before_rng(state, target, dead):
+    state = multi_active(state)
+    if dead:
+        state["combat"]["enemies"][1].update(hp=0, x=1, y=3)
+    before = deepcopy(state)
+    roller = Rolls()
+    with pytest.raises(ValueError):
+        resolve(state, "basic_attack", (target,), roller=roller)
+    assert roller.used == []
+    assert state == before
+
+
+def test_second_target_absent_in_legacy_rejected_before_rng(state):
+    active(state, adjacent=True)
+    with pytest.raises(ValueError):
+        act(state, "basic_attack", "goblin_002")
+
+
+def test_defend_applies_to_every_enemy_then_expires(state):
+    state = multi_active(state, adjacent=True)
+    defended = act(state, "combat_defend", "player", 13, 13)
+    assert [attack["ac"] for attack in defended["event_payload"]["enemy_attacks"]] == [19, 19]
+    assert defended["state"]["player"]["hp"] == 31
+    following = act(defended["state"], "basic_attack", "goblin_001", 1, 13, 2, 13, 2)
+    assert [attack["ac"] for attack in following["event_payload"]["enemy_attacks"]] == [17, 17]
+    assert following["state"]["player"]["hp"] == 23
+    assert following["state"]["combat"]["elapsed_seconds"] == 12
+
+
+def test_player_death_stops_remaining_enemy_responses(state):
+    state = multi_active(state, adjacent=True)
+    state["player"]["hp"] = 1
+    roller = Rolls(20, 6, 6)
+    result = resolve(state, "combat_defend", ("player",), roller=roller)
+    assert result["state"]["combat"]["result"] == "defeat"
+    assert len(result["event_payload"]["enemy_attacks"]) == 1
+    assert len(roller.used) == 3
+
+
+def test_player_cannot_enter_second_enemy_tile_but_can_enter_dead_tile(state):
+    state = multi_active(state, adjacent=True)
+    with pytest.raises(ValueError):
+        act(state, "combat_move", "down")
+    state["combat"]["enemies"][1]["hp"] = 0
+    result = act(state, "combat_move", "down", 1)
+    assert result["state"]["combat"]["player_y"] == 3
+
+
+@pytest.mark.parametrize("blocking_hp,expected", [(7, (4, 1)), (0, (3, 2))])
+def test_enemy_path_respects_other_living_enemies_and_crosses_dead_tiles(
+    state, blocking_hp, expected
+):
+    state = multi_active(state)
+    state["combat"]["enemies"][1].update(x=3, y=2, hp=blocking_hp)
+    result = act(state, "combat_defend", "player", *([1] if blocking_hp else []))
+    enemies = result["state"]["combat"]["enemies"]
+    assert (enemies[0]["x"], enemies[0]["y"]) == expected
+    living_positions = [(enemy["x"], enemy["y"]) for enemy in enemies if enemy["hp"] > 0]
+    assert len(set(living_positions)) == len(living_positions)
+
+
+def test_legacy_normalization_preserves_only_original_enemy_and_input(state):
+    state["combat"] = {"active": False, "result": "victory", "enemy_hp": 0, "enemy_ac": 15}
+    before = deepcopy(state)
+    combat = normalized_combat(state)
+    assert combat["enemies"] == [
+        {"id": "goblin_001", "name": "Goblin", "hp": 0, "ac": 15, "x": 4, "y": 2}
+    ]
+    assert not combat["active"]
+    assert state == before
+
+
+def test_authoritative_enemies_override_stale_legacy_aliases(state):
+    state = multi_active(state)
+    state["combat"].update(enemy_hp=99, enemy_x=0)
+    combat = normalized_combat(state)
+    assert combat["enemy_hp"] == 7
+    assert combat["enemy_x"] == 4
+
+
+def test_flee_ends_whole_multi_encounter(state):
+    state = multi_active(state)
+    state["combat"]["player_x"] = 0
+    result = act(state, "combat_flee", "exit")
+    assert result["state"]["combat"]["result"] == "fled"
+    assert result["state"]["encounter_enemy_id"] is None
+    assert result["event_payload"]["enemy_attacks"] == []
+    assert available_actions(result["state"]) == []

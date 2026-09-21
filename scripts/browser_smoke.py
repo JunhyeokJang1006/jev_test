@@ -112,6 +112,7 @@ def main() -> None:
 
                     click("전투 시작")
                     expect(page.get_by_test_id("battlefield")).to_be_visible()
+                    expect(page.get_by_label("적 상태").locator("li")).to_have_count(2)
                     page.set_viewport_size({"width": 390, "height": 844})
                     assert page.evaluate(
                         "document.documentElement.scrollWidth <= window.innerWidth"

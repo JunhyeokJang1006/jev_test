@@ -138,7 +138,7 @@ export default function CampaignPanel() {
     <div className="campaign-heading"><div><p className="eyebrow">{campaign?.state.location_name ?? "GREYHAVEN"}</p><h2>{campaign?.name ?? "캠페인 준비 중"}</h2></div><span>{campaign?.state.day ?? 1}일 · {campaign?.state.time ?? "21:36"}</span></div>
     {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} />)}
     <p className="narrative">{narrative}</p>
-    <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · Goblin HP {campaign.state.combat.enemy_hp}</span>}</div>
+    <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · 생존 적 {(campaign.state.combat.enemies ?? [{ hp: campaign.state.combat.enemy_hp }]).filter((enemy: { hp: number }) => enemy.hp > 0).length}명</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>
     {campaign?.state.progression && <section aria-label="캐릭터 성장">
       <p>레벨 {campaign.state.progression.level} · 경험치 {campaign.state.progression.xp} / {campaign.state.progression.next_level_xp ?? "현재 성장 상한"}</p>

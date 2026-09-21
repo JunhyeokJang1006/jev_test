@@ -43,7 +43,12 @@ def interpret_mock(text: str) -> ActionProposal:
     if ("고블린" in normalized or "goblin" in normalized) and any(
         word in normalized for word in ("공격", "검을", "베어", "휘두르", "찌른", "attack")
     ):
-        return ActionProposal("basic_attack", "attack", ("goblin_001",), None, None)
+        target = (
+            "goblin_002"
+            if any(word in normalized for word in ("두 번째", "두번째", "goblin_002"))
+            else "goblin_001"
+        )
+        return ActionProposal("basic_attack", "attack", (target,), None, None)
     return ActionProposal("describe_action", "exploration", (), None, None)
 
 
