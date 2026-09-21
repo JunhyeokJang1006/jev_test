@@ -165,7 +165,11 @@ def _resolve_action(
     if proposal.intent in {command[0] for command in tactical.COMMANDS.values()}:
         outcome = tactical.resolve(state, proposal.intent, proposal.target_ids, roller=roller)
         result = outcome["state"]
-        previous = int(state.get("combat", {}).get("elapsed_seconds", 0))
+        previous = (
+            int(state.get("combat", {}).get("elapsed_seconds", 0))
+            if state.get("combat", {}).get("active")
+            else 0
+        )
         elapsed = max(0, int(result.get("combat", {}).get("elapsed_seconds", 0)) - previous)
         before = int(state.get("combat_seconds", 0))
         result["combat_seconds"] = before + elapsed
@@ -180,6 +184,8 @@ def _resolve_action(
             }
         )
         return TurnOutcome(**outcome)
+    if state.get("combat", {}).get("active"):
+        raise ValueError("전투 중에는 유효한 전투 행동과 대상만 선택할 수 있습니다.")
     if proposal.intent == "deceive_mayor":
         if proposal.target_ids != ("npc_harlan",) or not any(
             npc.get("id") == "npc_harlan" for npc in state.get("npcs", [])

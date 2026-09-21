@@ -83,8 +83,11 @@ def prepare(state: dict[str, Any]) -> dict[str, Any]:
 def available_actions(state: dict[str, Any]) -> list[str]:
     if state.get("player", {}).get("hp", 0) <= 0:
         return defeat.available_actions(state)
+    if state.get("combat", {}).get("active"):
+        return tactical.available_actions(state)
     if state.get("quest", {}).get("ending"):
         actions = [
+            *tactical.available_actions(state),
             *followup.available_actions(state),
             *progression.available_actions(state),
             *world_effects.available_actions(state),
@@ -216,6 +219,7 @@ def resolve_world(
                 for key, name in destination["npcs"]
             ],
         )
+        tactical.record_completion(result)
         result.pop("combat", None)
         minutes = 5
         narrative = f"{destination['name']}에 도착했다. " + (

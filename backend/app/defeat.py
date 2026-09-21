@@ -3,6 +3,7 @@
 from typing import Any
 
 from .resources import DEFAULT, initialize
+from .tactical import encounter_id
 
 COMMANDS = {
     "응급 치료 받기 (10골드, 1시간)": ("recover_defeat", "medic"),
@@ -15,8 +16,13 @@ def eligible(state: dict[str, Any]) -> bool:
     combat = state.get("combat", {})
     return (
         state.get("player", {}).get("hp") == 0
-        and state.get("location_id") == "greyhaven_inn"
-        and state.get("encounter_enemy_id") == "goblin_001"
+        and (state.get("location_id"), encounter_id(state))
+        in {
+            ("greyhaven_inn", "greyhaven_goblins"),
+            ("watchtower", "watchtower_ambush"),
+        }
+        and state.get("encounter_enemy_id")
+        == ("bandit_001" if encounter_id(state) == "watchtower_ambush" else "goblin_001")
         and combat.get("result") == "defeat"
         and combat.get("active") is False
         and state.get("defeat", {}).get("status", "pending") == "pending"
@@ -65,7 +71,7 @@ def apply(state: dict[str, Any], targets: tuple[str, ...]) -> dict[str, Any]:
     description = {
         "medic": "10골드를 지불하고 1시간 동안 응급 치료를 받았다.",
         "supplies": "보급품 1개를 사용해 4시간 동안 상처를 치료했다.",
-        "wait": "8시간 뒤 여관 사람들의 도움으로 의식을 되찾았다.",
+        "wait": "8시간 뒤 사람들의 도움으로 의식을 되찾았다.",
     }[method]
     return {
         "event_type": "DEFEAT_RECOVERED",

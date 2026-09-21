@@ -1,16 +1,17 @@
 "use client";
 
 type Enemy = { id: string; name: string; hp: number; x: number; y: number; conditions?: string[] };
-type Combat = { enemies?: Enemy[]; width?: number; height?: number; player_x: number; player_y: number; enemy_x: number; enemy_y: number; enemy_hp: number; exit_x: number; exit_y: number; round: number; movement_remaining?: number; action_available?: boolean; bonus_action_available?: boolean; defending?: boolean; walls?: number[][]; initiative?: { first?: string; player_roll?: number; enemy_roll?: number } };
+type Combat = { encounter_id?: string; title?: string; enemies?: Enemy[]; width?: number; height?: number; player_x: number; player_y: number; enemy_x: number; enemy_y: number; enemy_hp: number; exit_x: number; exit_y: number; round: number; movement_remaining?: number; action_available?: boolean; bonus_action_available?: boolean; defending?: boolean; walls?: number[][]; initiative?: { first?: string; player_roll?: number; enemy_roll?: number } };
 
 export default function Battlefield({ combat, actions, busy, onAction }: { combat: Combat; actions: string[]; busy: boolean; onAction: (action: string) => void }) {
   const directions: Record<string, string> = { "0,-1": "전투 이동: 위", "0,1": "전투 이동: 아래", "-1,0": "전투 이동: 왼쪽", "1,0": "전투 이동: 오른쪽" };
   const width = combat.width ?? 6, height = combat.height ?? 5;
   const enemies: Enemy[] = combat.enemies ?? [{ id: "goblin_001", name: "Goblin", hp: combat.enemy_hp, x: combat.enemy_x, y: combat.enemy_y }];
   const conditionNames: Record<string, string> = { prone: "넘어짐 · 다음 적 차례에 일어나기만 함", exposed: "빈틈 · 다음 공격 2d20 중 높은 값" };
-  const attackLabels: Record<string, string> = { goblin_001: "고블린을 공격한다", goblin_002: "두 번째 고블린을 공격한다" };
+  const attackLabels: Record<string, string> = { goblin_001: "고블린을 공격한다", goblin_002: "두 번째 고블린을 공격한다", bandit_001: "매복자를 공격한다", bandit_002: "두 번째 매복자를 공격한다" };
+  const enemyLabels: Record<string, string> = { goblin_001: "고블린", goblin_002: "정찰병", bandit_001: "매복자", bandit_002: "매복자 2" };
   return <section aria-label="전술 전투" data-testid="battlefield">
-    <h3>여관 전투 · {combat.round}라운드</h3>
+    <h3>{combat.title ?? "여관 전투"} · {combat.round}라운드</h3>
     <p>진영 선제권: {combat.initiative?.first === "enemy" ? "적 진영" : "Kael"}</p>
     <ul aria-label="적 상태">{enemies.map(enemy => <li key={enemy.id}>{enemy.name}: HP {enemy.hp}{enemy.hp <= 0 ? " · 쓰러짐" : ""}{(enemy.conditions ?? []).filter(condition => conditionNames[condition]).map(condition => <span key={condition}> · {conditionNames[condition]}</span>)}</li>)}</ul>
     <p aria-label="남은 전투 행동">이동 {combat.movement_remaining ?? 3}칸 (기본 3) · 주요 행동 {combat.action_available === false ? "사용 완료" : "1회"} · 보조 행동 {combat.bonus_action_available === false ? "사용 완료" : "1회"}{combat.defending ? " · 방어 중 AC +2" : ""}</p>
@@ -28,7 +29,7 @@ export default function Battlefield({ combat, actions, busy, onAction }: { comba
         const canMove = !wall && !enemy && action && actions.includes(action);
         const attack = enemy ? attackLabels[enemy.id] : undefined;
         const canAttack = attack && actions.includes(attack);
-        const content = player ? "Kael" : enemy ? (enemy.id === "goblin_002" ? "정찰병" : "고블린") : wall ? "벽" : exit ? "출구" : "·";
+        const content = player ? "Kael" : enemy ? (enemyLabels[enemy.id] ?? enemy.name) : wall ? "벽" : exit ? "출구" : "·";
         return <button key={index} type="button" style={{ margin: 0, padding: "12px 0", fontSize: 12, minWidth: 0 }} aria-label={canAttack ? `공격: ${enemy?.name}` : canMove ? `이동: (${x}, ${y})` : `${content} (${x}, ${y})`} disabled={busy || (!canMove && !canAttack)} onClick={() => { if (canAttack) onAction(attack); else if (canMove) onAction(action); }}>{content}</button>;
       })}
     </div>

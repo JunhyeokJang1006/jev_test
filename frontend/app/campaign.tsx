@@ -252,6 +252,7 @@ export default function CampaignPanel() {
       <h3>{campaign.state.expedition.title}</h3>
       <p>{campaign.state.expedition.objective}</p>
       <p>확보한 단서 {(campaign.state.expedition.clues ?? []).length}개 · {campaign.state.expedition.status === "completed" ? "보고 완료" : campaign.state.expedition.status === "resolved" ? "현장 해결 · 시장으로 돌아가 보고하세요" : "진행 중"}</p>
+      {campaign.state.expedition.approach === "combat" && <p>진입로 확보: 매복자를 물리쳤습니다.{campaign.state.expedition.status === "active" ? " 단서를 확인하고 구조 대상을 선택하세요." : ""}</p>}
       {campaign.state.expedition.status === "active" && <p>두 대상을 모두 구할 기회까지 {Math.max(0, campaign.state.expedition.deadline_at - (campaign.state.elapsed_minutes ?? 0))}분. 이동·휴식·작업 시간도 포함됩니다. 기한을 넘겨도 한 대상을 선택해 진행할 수 있습니다.</p>}
       {campaign.state.expedition.resolution && <p>{campaign.state.expedition.resolution}</p>}
       <p>설득·잠입은 각각 한 번만 시도할 수 있습니다. 실패해도 안전한 작업으로 진행할 수 있습니다. 동시 구출에는 두 단서와 로프, 최종 작업 5분이 필요합니다.</p>

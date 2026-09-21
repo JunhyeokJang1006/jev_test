@@ -97,6 +97,12 @@ def reward(before: dict[str, Any], after: dict[str, Any]) -> int:
         candidates.append(("followup_completed", 75))
     combat = after.get("combat", {})
     if (
+        combat.get("encounter_id") == "watchtower_ambush"
+        and combat.get("result") == "victory"
+        and before.get("combat", {}).get("active")
+    ):
+        candidates.append(("watchtower_victory", 25))
+    if (
         before.get("expedition", {}).get("status") != "completed"
         and after.get("expedition", {}).get("status") == "completed"
     ):

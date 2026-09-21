@@ -36,6 +36,14 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["progression"] = public_progression(state)
+    if "encounter_history" in state:
+        result["encounter_history"] = {
+            key: value
+            for key, value in state["encounter_history"].items()
+            if key in {"greyhaven_goblins", "watchtower_ambush"}
+            and isinstance(value, str)
+            and value in {"victory", "fled", "defeat"}
+        }
     if "defeat" in state:
         result["defeat"] = pick(
             state["defeat"], "status method gold_spent supplies_spent minutes healing"
@@ -70,7 +78,7 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         combat = normalized_combat(state)
         result["combat"] = pick(
             combat,
-            "active enemy_id enemy_name enemy_hp enemy_ac round result "
+            "encounter_id title active enemy_id enemy_name enemy_hp enemy_ac round result "
             "width height player_x player_y enemy_x enemy_y exit_x exit_y elapsed_seconds "
             "movement_remaining action_available bonus_action_available defending",
         )

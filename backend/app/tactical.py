@@ -9,6 +9,13 @@ from .resources import DEFAULT as DEFAULT_RESOURCES
 from .resources import initialize as initialize_resources
 
 COMMANDS = {
+    "망루 매복자와 전투": ("start_combat", "bandit_001"),
+    "매복자를 공격한다": ("basic_attack", "bandit_001"),
+    "두 번째 매복자를 공격한다": ("basic_attack", "bandit_002"),
+    "매복자 밀쳐 넘어뜨리기": ("combat_shove", "bandit_001"),
+    "두 번째 매복자 밀쳐 넘어뜨리기": ("combat_shove", "bandit_002"),
+    "매복자 교란하기": ("combat_feint", "bandit_001"),
+    "두 번째 매복자 교란하기": ("combat_feint", "bandit_002"),
     "전투 시작": ("start_combat", "goblin_001"),
     "고블린을 공격한다": ("basic_attack", "goblin_001"),
     "두 번째 고블린을 공격한다": ("basic_attack", "goblin_002"),
@@ -30,7 +37,33 @@ DIRECTIONS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 WALLS = {(2, 1), (2, 3)}
 
 
+def encounter_id(state: dict) -> str:
+    return (state.get("combat") or {}).get("encounter_id", "greyhaven_goblins")
+
+
+def record_completion(state: dict) -> None:
+    combat = state.get("combat") or {}
+    if (
+        combat
+        and not combat.get("active")
+        and combat.get("result") in {"victory", "fled", "defeat"}
+    ):
+        state.setdefault("encounter_history", {})[encounter_id(state)] = combat["result"]
+
+
 def _eligible(state: dict) -> bool:
+    if state.get("player", {}).get("hp", 0) <= 0:
+        return False
+    if state.get("combat", {}).get("active"):
+        expected = "watchtower" if encounter_id(state) == "watchtower_ambush" else "greyhaven_inn"
+        return state.get("location_id") == expected
+    quest = state.get("expedition") or {}
+    if state.get("location_id") == "watchtower":
+        return (
+            quest.get("status") == "active"
+            and quest.get("passage") is not None
+            and quest.get("approach") is None
+        )
     return (
         state.get("location_id") == "greyhaven_inn"
         and state.get("encounter_enemy_id") == "goblin_001"
@@ -44,6 +77,8 @@ def _eligible(state: dict) -> bool:
 def _combat(state: dict) -> dict:
     combat = deepcopy(state.get("combat") or {})
     defaults = {
+        "encounter_id": "greyhaven_goblins",
+        "title": "여관 전투",
         "active": True,
         "enemy_id": "goblin_001",
         "enemy_name": "Goblin",
@@ -90,7 +125,7 @@ def _combat(state: dict) -> dict:
 
 
 def _sync_legacy(combat: dict) -> None:
-    first = next((enemy for enemy in combat["enemies"] if enemy["id"] == "goblin_001"), None)
+    first = next(iter(combat["enemies"]), None)
     if first is not None:
         for key in ("id", "name", "hp", "ac", "x", "y"):
             combat[f"enemy_{key}"] = first[key]
@@ -127,7 +162,14 @@ def available_actions(state: dict) -> list[str]:
         return []
     existing = state.get("combat") or {}
     if not existing.get("active"):
-        return [] if existing else ["전투 시작"]
+        target = (
+            "watchtower_ambush" if state.get("location_id") == "watchtower" else "greyhaven_goblins"
+        )
+        if target in state.get("encounter_history", {}) or (
+            existing and encounter_id(state) == target
+        ):
+            return []
+        return ["망루 매복자와 전투" if target == "watchtower_ambush" else "전투 시작"]
     combat = _combat(state)
     player = _position(combat, "player")
     actions = [
@@ -252,15 +294,32 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
     if not _eligible(state):
         raise ValueError("현재 장면에서는 전투할 수 없습니다.")
     existing = state.get("combat") or {}
-    starting = not existing
-    if existing and not existing.get("active"):
-        raise ValueError("이미 종료된 전투입니다.")
+    starting = not existing.get("active")
     if starting and intent not in {"start_combat", "basic_attack"}:
         raise ValueError("먼저 전투를 시작해 주세요.")
     if not starting and intent == "start_combat":
         raise ValueError("이미 전투 중입니다.")
     result = deepcopy(state)
-    combat = result["combat"] = _combat(state)
+    if starting:
+        labels = available_actions(state)
+        expected = "bandit_001" if state.get("location_id") == "watchtower" else "goblin_001"
+        if not labels or targets[0] != expected:
+            raise ValueError("이미 종료됐거나 현재 장면과 일치하지 않는 전투입니다.")
+        record_completion(result)
+        result.pop("combat", None)
+        combat = result["combat"] = _combat(result)
+        combat["encounter_id"] = (
+            "watchtower_ambush" if expected == "bandit_001" else "greyhaven_goblins"
+        )
+        combat["title"] = "망루 매복 전투" if expected == "bandit_001" else "여관 전투"
+        if expected == "bandit_001":
+            for index, enemy in enumerate(combat["enemies"], 1):
+                enemy.update(
+                    id=f"bandit_{index:03d}", name="매복자" if index == 1 else "두 번째 매복자"
+                )
+        result["encounter_enemy_id"] = expected
+    else:
+        combat = result["combat"] = _combat(state)
     if intent == "basic_attack" and not any(
         enemy["id"] == targets[0] and enemy["hp"] > 0 for enemy in combat["enemies"]
     ):
@@ -420,10 +479,17 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
         elif response["moved"]:
             narrative += f" {enemy_name}이 한 칸 접근했다."
     if combat["result"] == "victory":
-        narrative += " 고블린이 쓰러졌다. 전투에서 승리했다."
+        narrative += " 적들이 쓰러졌다. 전투에서 승리했다."
+        if combat.get("encounter_id") == "watchtower_ambush":
+            result["expedition"].update(
+                approach="combat",
+                stage="decision",
+                objective="두 위치 단서를 조사하고 구조 또는 문서 확보를 확정하세요.",
+            )
     elif combat["result"] == "defeat":
         narrative += " 쓰러져 더 이상 싸울 수 없다. 치료를 받거나 도움을 기다려 회복할 수 있다."
     result["hidden"] = False
+    record_completion(result)
     payload["result"] = combat["result"]
     return {
         "event_type": event_type,

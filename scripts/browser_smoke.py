@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections import deque
 from pathlib import Path
 from uuid import uuid4
 
@@ -334,6 +335,105 @@ def verify_tactical_options(browser) -> None:
         context.close()
 
 
+def verify_watchtower_combat(page, click, *, retreat: bool) -> bool:
+    """Continue an existing adventure through a second encounter, with real dice.
+
+    The browser does not force victory: defeat must recover and converge via stairs.
+    Deterministic backend tests separately cover each outcome and reward boundary.
+    """
+    campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+
+    def current():
+        response = httpx.get(f"http://127.0.0.1:8000/api/campaign/{campaign_id}")
+        response.raise_for_status()
+        return response.json()
+
+    before = current()["state"]
+    # The main adventure already fled the inn; travel may remove the old public board.
+    assert not before.get("combat", {}).get("active")
+    click("망루 매복자와 전투")
+    expect(page.get_by_test_id("battlefield")).to_contain_text("망루 매복 전투")
+    expect(page.get_by_label("적 상태").locator("li")).to_have_count(2)
+    expect(page.get_by_role("button", name="망루 계단 보강 (10분)", exact=True)).to_have_count(0)
+    started = current()
+    assert started["state"]["combat"]["encounter_id"] == "watchtower_ambush"
+    assert {enemy["id"] for enemy in started["state"]["combat"]["enemies"]} == {
+        "bandit_001",
+        "bandit_002",
+    }
+    assert started["state"]["elapsed_minutes"] >= before["elapsed_minutes"]
+    page.reload()
+    expect(page.get_by_test_id("battlefield")).to_contain_text("망루 매복 전투")
+    assert current() == started
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    if retreat:
+        click("이동: (0, 2)")
+        click("전투에서 후퇴")
+    else:
+        # Choose legal movement from the public board and click the actual grid target.
+        for _ in range(120):
+            data = current()
+            state, actions = data["state"], data["actions"]
+            combat = state["combat"]
+            if not combat["active"]:
+                break
+            if (
+                "전투 중 치유 물약" in actions
+                and state["player"]["hp"] <= state["player"]["max_hp"] - 8
+            ):
+                click("전투 중 치유 물약")
+                continue
+            attack = next((label for label in actions if "매복자를 공격한다" in label), None)
+            if attack:
+                enemy_id = "bandit_002" if attack.startswith("두 번째") else "bandit_001"
+                feint = "두 번째 매복자 교란하기" if enemy_id == "bandit_002" else "매복자 교란하기"
+                if feint in actions:
+                    click(feint)
+                enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == enemy_id)
+                click(f"공격: {enemy['name']}")
+                assert current()["latest_turn"]["event"]["payload"]["target_id"] == enemy_id
+                continue
+            move = None
+            if combat["action_available"] and combat["movement_remaining"]:
+                living = {(e["x"], e["y"]) for e in combat["enemies"] if e["hp"] > 0}
+                blocked = living | {tuple(wall) for wall in combat["walls"]}
+                origin = combat["player_x"], combat["player_y"]
+                queue, seen = deque([(origin, [])]), {origin}
+                while queue:
+                    point, path = queue.popleft()
+                    if path and any(abs(point[0] - x) + abs(point[1] - y) == 1 for x, y in living):
+                        move = path[0]
+                        break
+                    for dx, dy in ((1, 0), (0, 1), (-1, 0), (0, -1)):
+                        neighbor = point[0] + dx, point[1] + dy
+                        if (
+                            0 <= neighbor[0] < combat["width"]
+                            and 0 <= neighbor[1] < combat["height"]
+                            and neighbor not in blocked | seen
+                        ):
+                            seen.add(neighbor)
+                            queue.append((neighbor, [*path, neighbor]))
+            click(f"이동: ({move[0]}, {move[1]})" if move else "적 차례로 넘기기")
+        else:
+            raise AssertionError("망루 전투가 120개 행동 안에 종료되지 않았습니다.")
+    finished = current()["state"]
+    result = finished["combat"]["result"]
+    assert result == "fled" if retreat else result in {"victory", "defeat"}
+    won = result == "victory"
+    assert finished["progression"]["xp"] == before["progression"]["xp"] + (25 if won else 0)
+    if result == "defeat":
+        click("도움을 기다리기 (8시간)")
+        assert current()["state"]["player"]["hp"] > 0
+    expect(page.get_by_role("button", name="망루 매복자와 전투", exact=True)).to_have_count(0)
+    if won:
+        assert finished["expedition"]["approach"] == "combat"
+        expect(page.get_by_label("망루 원정")).to_contain_text("매복자를 물리쳤습니다")
+    else:
+        click("망루 계단 보강 (10분)")
+    print(f"망루 브라우저 실주사위 결과: {result}; 원정 선택으로 합류", flush=True)
+    return won
+
+
 def wait_for(url: str, process: subprocess.Popen) -> None:
     deadline = time.monotonic() + 50
     while time.monotonic() < deadline:
@@ -603,9 +703,15 @@ def main() -> None:
                         for command in [
                             "망루에서 전령 위치 조사 (5분)",
                             "망루에서 문서 위치 조사 (5분)",
-                            "망루 계단 보강 (10분)",
                         ]:
                             click(command)
+                        watchtower_victory = False
+                        if action == "하를란에게 봉인 반환":
+                            click("망루 계단 보강 (10분)")
+                        else:
+                            watchtower_victory = verify_watchtower_combat(
+                                page, click, retreat=exile
+                            )
                         click(
                             "로프로 전령과 문서 모두 확보 확정 (5분)"
                             if action == "하를란에게 봉인 반환"
@@ -618,7 +724,9 @@ def main() -> None:
                         click("시장으로 이동")
                         click("오렌에게 망루 결과 보고 (25골드)")
                         expect(page.get_by_label("망루 원정")).to_contain_text("보고 완료")
-                        expect(page.get_by_label("캐릭터 성장")).to_contain_text("경험치 250")
+                        expect(page.get_by_label("캐릭터 성장")).to_contain_text(
+                            f"경험치 {275 if watchtower_victory else 250}"
+                        )
                         click("성장: 전투 숙련")
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 5")
                         page.reload()
@@ -675,6 +783,7 @@ def main() -> None:
                 print(
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
                     "구조/문서/동시 확보·귀환 보고·레벨5 성장, "
+                    "여관 이후 망루 전투와 후퇴의 원정 합류(실주사위 결과는 위 별도 기록), "
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "

@@ -28,7 +28,7 @@ def act(campaign, text, **extra):
     return response.json()
 
 
-def at_tower(branch="law"):
+def at_tower(branch="law", *, approach=True):
     campaign = request("POST", "/api/campaign", json={}).json()
     for text in [
         "시장으로 이동",
@@ -86,9 +86,10 @@ def at_tower(branch="law"):
     for text in [
         "망루에서 전령 위치 조사 (5분)",
         "망루에서 문서 위치 조사 (5분)",
-        "망루 계단 보강 (10분)",
     ]:
         act(campaign, text)
+    if approach:
+        act(campaign, "망루 계단 보강 (10분)")
     return campaign
 
 
