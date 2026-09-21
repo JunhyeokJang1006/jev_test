@@ -64,9 +64,8 @@ def test_full_completion_once_preserves_prior_chapters_and_information_boundary(
     assert s["expedition"]["status"] == "completed"
     assert s["resources"]["gold"] == 25
     assert s["npc_knowledge"]["npc_harlan"] == {"facts": {"private": "untouched"}}
-    assert (
-        s["npc_knowledge"]["npc_oren"]["facts"]["expedition_report"]["source"] == "witnessed_report"
-    )
+    assert s["npc_knowledge"]["npc_oren"]["facts"]["expedition_report"]["source"] == "player_report"
+    assert s["npc_knowledge"]["npc_oren"]["facts"]["expedition_report"]["certainty"] == "reported"
     assert prior == {key: s[key] for key in prior}
     before = deepcopy(s)
     with pytest.raises(ValueError):

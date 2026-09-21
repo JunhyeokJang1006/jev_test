@@ -282,9 +282,11 @@ def apply(state: dict[str, Any], intent: str, targets: tuple[str, ...], roller: 
             state.setdefault("npc_knowledge", {}).setdefault("npc_oren", {}).setdefault(
                 "facts", {}
             )["expedition_report"] = {
-                "text": quest["resolution"],
-                "source": "witnessed_report",
-                "certainty": "known",
+                "text": (
+                    f"플레이어가 '{quest['resolution']}'라고 보고했다. 현장을 직접 보지는 않았다."
+                ),
+                "source": "player_report",
+                "certainty": "reported",
                 "shareable": True,
             }
             quest.update(

@@ -121,6 +121,15 @@ Last-Event-ID에서 저장한 내용을 재전송하고 알 수 없는 ID는 GET
 
 ## 평가와 운영
 
+NPC actor의 기억은 화자의 `shareable` 장부만 후보로 삼고 현재 질문에 관련된 사실,
+최근 사실, 시나리오 기준 사실을 최대12개 선택한다. `lexical-v1`은 한글 부분 일치 등을
+사용하는 결정적 어휘 검색이며 의미 임베딩이나 모델 요약은 아니다. 다른 NPC 장부와
+비공개 사실·세계의 숨은 진실을 검색 후보에 넣지 않는다.
+`certainty`가 `reported`/`unverified`이면 전달받은 정보일 뿐 검증된 진실로 말하지 않도록
+값과 출처를 그대로 제공한다. 망루 귀환 보고는 `player_report/reported`로 저장하며,
+기존 `expedition_report/witnessed_report` 기록도 읽기/다음 상태 준비에서 이 구분으로 보완한다.
+이는 입력 경계의 보장이다. 모델이 불확실성을 정확히 표현하는지는 별도의 실모델 평가가 필요하다.
+
 call_type, provider/model, prompt/schema/ruleset version, latency, token, repair 횟수,
 fallback 이유, 입력 hash, context에 채택한 event ID를 추적한다.
 키와 비밀 원문은 표준 로그에 남기지 않는다. 가격 확인 후에만 비용을 계산한다.

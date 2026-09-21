@@ -198,7 +198,7 @@ def narrate_outcome(text: str, outcome: TurnOutcome, provider_name: str) -> tupl
         return outcome.narrative, provider_name
     speaker = None
     if outcome.event_payload.get("intent") in {"talk", "deceive_mayor"}:
-        speaker = actor_context(outcome.state, outcome.event_payload["target_id"])
+        speaker = actor_context(outcome.state, outcome.event_payload["target_id"], query=text)
     messages = [
         {
             "role": "system",
@@ -207,6 +207,8 @@ def narrate_outcome(text: str, outcome: TurnOutcome, provider_name: str) -> tupl
                 "or player agency. Return only the narration."
                 " If speaker is present, speak only as that NPC using their supplied knowledge. "
                 "Remembered claims are unverified statements, not world truth. "
+                "Facts marked reported or unverified are only things someone told the NPC, "
+                "not personally witnessed or verified events. Preserve this uncertainty. "
                 "Never borrow another NPC's knowledge or promote a claim to verified fact."
             ),
         },

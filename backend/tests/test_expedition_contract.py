@@ -128,6 +128,10 @@ def test_expedition_follows_original_choice_and_persists_reward_once(branch):
     finally:
         db.close()
     assert "expedition_report" in internal["npc_knowledge"]["npc_oren"]["facts"]
+    report = internal["npc_knowledge"]["npc_oren"]["facts"]["expedition_report"]
+    assert report["certainty"] == "reported"
+    assert report["source"] == "player_report"
+    assert "현장을 직접 보지는 않았다" in report["text"]
     assert "expedition_report" not in internal["npc_knowledge"]["npc_harlan"]["facts"]
     assert "expedition_report" not in internal["npc_knowledge"]["npc_mira"]["facts"]
     assert "npc_knowledge" not in campaign["state"]

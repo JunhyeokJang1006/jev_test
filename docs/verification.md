@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 228 passed. 전투 턴 예산·물약·소진 상태 저장/재송신·승리 후 탐험 복귀 포함 |
+| API/AI 테스트 | PASS | pytest 244 passed. 기존 회귀와 NPC 관련 기억 선택·보고 출처·비공개/타 NPC 입력 경계 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -134,6 +134,17 @@ Sol 독립 관련84개와 전체 check 228개·Ruff·TypeScript·production buil
 Chrome에서 전투 물약→주요 행동 방어→이동→명시 턴 종료·예산 회복→후퇴를 확인하고
 세 봉인/후속/망루 경로까지 다시 완주했다. 전투 물약으로 HP가 가득 차면 불필요한 여관 휴식은
 제공되지 않는 조건도 검사 흐름에 반영했다. 전체 SRD 행동·반응·개별 initiative의 완성은 아니다.
+
+NPC 기억 검색·출처: Astra writer가 대상 장부만 읽는 lexical-v1 검색을 추가했다.
+질문과 관련된 후반 기억, 한국어 부분 일치, 빈 질문의 최근/시나리오 보충, 최대12개,
+입력 길이/어휘 수 제한, 타 NPC 접근 금지와 중첩 비공개 값 차단을 검사했다.
+루트는 실제 narrator 요청 구성에서 관련 사실과 reported 출처 전달, 타 NPC·세계 비밀 제외를
+확인했고 망루 보고가 새 저장에서 player_report/reported로 기록됨을 API 완주로 확인했다.
+기존 witnessed_report 망루 기록의 의미 보완은 원문을 보존하며 중복 수식 없이 적용한다.
+관련 사실이 슬롯을 모두 채워도 시나리오 핵심 사실 하나를 보존하도록 포화 회귀를 추가했다.
+Sol 독립 재검토58개와 타 NPC 접근·비공개 수량 노출 적대 검사가 통과했고 추가 지적은 없다.
+전체 check 244개·Ruff·TypeScript·production build와 Chrome 회귀 PASS.
+이 검증은 입력 선택/정보 경계이며 실모델의 사실성이나 의미 검색 품질을 증명하지 않는다.
 
 ## 미실행·미구현
 
