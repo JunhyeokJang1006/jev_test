@@ -13,6 +13,7 @@ from app import ai
         ("눈앞 고블린을 밀어 넘어뜨릴게", "combat_shove", "goblin_001"),
         ("고블린의 시선을 속여 빈틈을 만들래", "combat_feint", "goblin_001"),
         ("공격 대신 빠르게 달릴게", "combat_dash", "player"),
+        ("전투 회복력으로 기운을 되찾을게", "combat_second_wind", "player"),
     ],
 )
 @pytest.mark.parametrize("available", [True, False])

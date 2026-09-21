@@ -68,7 +68,10 @@ def advance_time(state: dict[str, Any], minutes: int) -> None:
 
 
 def prepare(state: dict[str, Any]) -> dict[str, Any]:
+    from .abilities import initialize as initialize_abilities
+
     result = deepcopy(state)
+    initialize_abilities(result)
     initialize_knowledge(result)
     resources.initialize(result)
     equipment.initialize(result)

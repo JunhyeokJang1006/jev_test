@@ -512,6 +512,58 @@ def verify_equipment(browser) -> None:
         context.close()
 
 
+def verify_combat_recovery(browser) -> None:
+    """Use a real charge, reload/save it, retreat and recharge through real rest."""
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    page.goto("http://127.0.0.1:3000")
+    send = page.get_by_role("button", name="행동 보내기", exact=True)
+    expect(send).to_be_enabled()
+
+    def click(label):
+        page.get_by_role("button", name=label, exact=True).click()
+        expect(send).to_be_enabled()
+
+    def current():
+        campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+        response = httpx.get(f"http://127.0.0.1:8000/api/campaign/{campaign_id}")
+        response.raise_for_status()
+        return response.json()["state"]
+
+    expect(page.get_by_label("전투 회복력", exact=True)).to_contain_text("1/1회")
+    click("전투 시작")
+    before = current()
+    click("전투 회복력 사용")
+    used = current()
+    assert used["abilities"]["second_wind"]["remaining"] == 0
+    assert before["player"]["hp"] < used["player"]["hp"] <= used["player"]["max_hp"]
+    assert used["combat"]["bonus_action_available"] is False
+    assert used["resources"] == before["resources"]
+    expect(page.get_by_role("button", name="전투 회복력 사용", exact=True)).to_have_count(0)
+    page.reload()
+    expect(send).to_be_enabled()
+    expect(page.get_by_label("전투 회복력", exact=True)).to_contain_text("0/1회")
+    click("세이브")
+    expect(page.get_by_text("세이브 완료", exact=False)).to_be_visible()
+    snapshot = page.evaluate("localStorage.getItem('luna-realms-snapshot-id')")
+    click("전투 이동: 왼쪽")
+    click("전투에서 후퇴")
+    resting = current()
+    assert resting["abilities"]["second_wind"]["remaining"] == 0
+    click("여관에서 짧은 휴식")
+    rested = current()
+    assert rested["abilities"]["second_wind"]["remaining"] == 1
+    assert rested["elapsed_minutes"] == resting["elapsed_minutes"] + 60
+    expected_cost = int(resting["player"]["hp"] < resting["player"]["max_hp"])
+    assert rested["resources"]["hit_dice"] == resting["resources"]["hit_dice"] - expected_cost
+    page.get_by_label("저장 선택", exact=False).select_option(snapshot)
+    click("복원")
+    expect(page.get_by_label("전투 회복력", exact=True)).to_contain_text("0/1회")
+    assert current()["combat"]["bonus_action_available"] is False
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    context.close()
+
+
 def wait_for(url: str, process: subprocess.Popen) -> None:
     deadline = time.monotonic() + 50
     while time.monotonic() < deadline:
@@ -906,6 +958,7 @@ def main() -> None:
                     verify_defeat_recovery(browser)
                     verify_tactical_options(browser)
                     verify_equipment(browser)
+                    verify_combat_recovery(browser)
                     browser.close()
                 print(
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
@@ -913,6 +966,7 @@ def main() -> None:
                     "여관 이후 망루 전투와 후퇴의 원정 합류(실주사위 결과는 위 별도 기록), "
                     "원정 후 지원/미개입에 따른 수송·파벌 복구·시장 가격 변화와 재접속, "
                     "장비 구매/교체·장비별 실효 판정·저장 복원과 모바일 표시, "
+                    "전투 회복력 소진·휴식 재충전·소진 상태 저장 복원, "
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "

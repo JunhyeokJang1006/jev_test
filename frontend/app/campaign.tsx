@@ -268,7 +268,12 @@ export default function CampaignPanel() {
     </section>}
     {campaign?.state.resources && <section aria-label="회복과 보급">
       <p>골드 {campaign.state.resources.gold ?? 0} · 치유 물약 {campaign.state.resources.healing_potions ?? 0} · 야영 보급품 {campaign.state.resources.camp_supplies ?? 0} · 회복 주사위 {campaign.state.resources.hit_dice ?? 0}/2</p>
-      <p>물약: 2d4+2 회복, 전투 중에는 보조 행동 1회. 여관 짧은 휴식: 1시간·회복 주사위 1개로 1d8+2. 긴 휴식: 8시간·보급품 1개로 완전 회복.</p>
+      <p>물약: 2d4+2 회복, 전투 중에는 보조 행동 1회. 여관 짧은 휴식: 1시간, 부상 중 회복 주사위가 있으면 1개로 1d8+2 회복. 긴 휴식: 8시간·보급품 1개로 완전 회복.</p>
+      {campaign.state.abilities?.second_wind && <div aria-label="전투 회복력">
+        <p>전투 회복력 {campaign.state.abilities.second_wind.remaining}/{campaign.state.abilities.second_wind.maximum}회 · 회복 1d{campaign.state.abilities.second_wind.healing_die}+{campaign.state.abilities.second_wind.healing_bonus}</p>
+        <p>전투 중 부상 상태에서 보조 행동을 소비합니다. 물약과 같은 턴에 사용할 수 없습니다. 짧은/긴 휴식으로 재충전하며, 전투 종료나 패배 치료만으로는 충전되지 않습니다.</p>
+        <p>능력만 소진된 경우에도 여관에서 휴식할 수 있습니다. 재충전만 하는 짧은 휴식에는 회복 주사위가 들지 않지만 1시간이 흐릅니다.</p>
+      </div>}
     </section>}
     {campaign?.state.quest && <div aria-label="퀘스트">
       <h3>{campaign.state.quest.title}</h3>

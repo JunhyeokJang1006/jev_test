@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from . import abilities
 from .dice import Roller
 from .world_effects import prices
 
@@ -41,9 +42,12 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     if injured and resources.get("healing_potions", 0) > 0:
         actions.append("치유 물약 사용")
     if state.get("location_id") == "greyhaven_inn":
-        if injured and resources.get("hit_dice", 0) > 0:
+        depleted = abilities.remaining(state) == 0
+        if (injured and resources.get("hit_dice", 0) > 0) or depleted:
             actions.append("여관에서 짧은 휴식")
-        if resources.get("camp_supplies", 0) > 0 and (injured or resources.get("hit_dice", 0) < 2):
+        if resources.get("camp_supplies", 0) > 0 and (
+            injured or resources.get("hit_dice", 0) < 2 or depleted
+        ):
             actions.append("여관에서 긴 휴식")
     if state.get("location_id") == "market":
         for item, price in prices(state).items():
@@ -76,20 +80,25 @@ def apply(state: dict[str, Any], intent: str, target: str, roller: Roller) -> di
     elif target == "long_rest":
         resources["camp_supplies"] -= 1
         resources["hit_dice"] = 2
+        abilities.set_remaining(state, 1)
         player["hp"] = player.get("max_hp", 37)
         minutes = 480
-        narrative = "보급품 1개를 사용해 여관에서 8시간 쉬었다. 체력과 회복 주사위를 회복했다."
+        narrative = "보급품 1개로 8시간 쉬었다. 체력·회복 주사위·전투 회복력을 회복했다."
     else:
         if target == "potion":
             resources["healing_potions"] -= 1
             rolls = [roller.roll(4), roller.roll(4)]
             narrative = "치유 물약 1개를 사용했다."
         else:
-            resources["hit_dice"] -= 1
-            rolls = [roller.roll(8)]
             minutes = 60
-            narrative = "여관에서 1시간 쉬며 회복 주사위 1개를 사용했다."
-        player["hp"] = min(player.get("max_hp", 37), before + sum(rolls) + 2)
+            abilities.set_remaining(state, 1)
+            narrative = "여관에서 1시간 쉬며 전투 회복력을 회복했다."
+            if before < player.get("max_hp", 37) and resources.get("hit_dice", 0) > 0:
+                resources["hit_dice"] -= 1
+                rolls = [roller.roll(8)]
+                narrative += " 회복 주사위 1개를 사용했다."
+        if rolls:
+            player["hp"] = min(player.get("max_hp", 37), before + sum(rolls) + 2)
     healed = player["hp"] - before
     if intent == "recover":
         state["hidden"] = False
@@ -102,6 +111,6 @@ def apply(state: dict[str, Any], intent: str, target: str, roller: Roller) -> di
             "healing": healed,
             "healing_rolls": rolls,
             "cost": cost,
-            "rule_id": "greyhaven-recovery-v1",
+            "rule_id": "greyhaven-recovery-v2",
         },
     }

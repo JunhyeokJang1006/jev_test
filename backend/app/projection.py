@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from .abilities import public_abilities
 from .equipment import effective_stats, public_equipment
 from .expedition import public_expedition
 from .progression import public_progression
@@ -38,6 +39,7 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["progression"] = public_progression(state)
+    result["abilities"] = public_abilities(state)
     result["equipment"] = public_equipment(state)
     result["effective_stats"] = effective_stats(state)
     result.update(public_world(state))

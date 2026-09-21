@@ -4,6 +4,7 @@ from collections import deque
 from copy import deepcopy
 from typing import Any
 
+from . import abilities
 from .dice import Roller
 from .equipment import effective_stats
 from .resources import DEFAULT as DEFAULT_RESOURCES
@@ -32,6 +33,7 @@ COMMANDS = {
     "방어 태세": ("combat_defend", "player"),
     "턴 종료": ("combat_end_turn", "player"),
     "전투 중 치유 물약": ("combat_potion", "player"),
+    "전투 회복력 사용": ("combat_second_wind", "player"),
     "전투에서 후퇴": ("combat_flee", "exit"),
 }
 DIRECTIONS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
@@ -197,6 +199,12 @@ def available_actions(state: dict) -> list[str]:
     if combat["action_available"]:
         actions.extend(["방어 태세", "전력 질주"])
     resources = state.get("resources", DEFAULT_RESOURCES)
+    if (
+        combat["bonus_action_available"]
+        and abilities.remaining(state) == 1
+        and state["player"]["hp"] < state["player"].get("max_hp", 37)
+    ):
+        actions.append("전투 회복력 사용")
     if (
         combat["bonus_action_available"]
         and resources.get("healing_potions", 0) > 0
@@ -391,6 +399,27 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             }
             effect = "넘어뜨렸다" if condition == "prone" else "교란해 빈틈을 만들었다"
             narrative = f"{enemy['name']}을 {effect}." if success else "전술 행동에 실패했다."
+        elif intent == "combat_second_wind":
+            ability = abilities.public_abilities(result)["second_wind"]
+            roll = roller.roll(10)
+            before = result["player"]["hp"]
+            result["player"]["hp"] = min(
+                result["player"].get("max_hp", 37), before + roll + ability["healing_bonus"]
+            )
+            abilities.set_remaining(result, 0)
+            combat["bonus_action_available"] = False
+            healing = result["player"]["hp"] - before
+            payload.update(
+                rule_id="greyhaven-second-wind-custom-v1",
+                healing=healing,
+                healing_rolls=[roll],
+                bonus=ability["healing_bonus"],
+                cost=0,
+            )
+            dice = {"outcome": "healed", "healing": healing}
+            narrative = (
+                f"전투 회복력을 사용해 HP {healing} 회복했다. 짧거나 긴 휴식으로 재충전된다."
+            )
         elif intent == "combat_potion":
             initialize_resources(result)
             result["resources"]["healing_potions"] -= 1

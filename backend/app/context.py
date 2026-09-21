@@ -31,6 +31,7 @@ def scene_context(state: dict[str, Any]) -> dict[str, Any]:
         "known_clues": list(quest.get("clues", []))[:20],
         "inventory": list(state.get("inventory", []))[:30],
         "resources": state.get("resources"),
+        "abilities": state["abilities"],
         "progression": state.get("progression"),
         "equipment": state["equipment"],
         "effective_stats": state["effective_stats"],
