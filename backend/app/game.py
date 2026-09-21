@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
@@ -43,12 +44,21 @@ def interpret_mock(text: str) -> ActionProposal:
         return ActionProposal(
             "hide_beside_door", "exploration", ("door_inn",), "stealth", "moderate"
         )
-    if ("고블린" in normalized or "goblin" in normalized) and any(
-        word in normalized for word in ("공격", "검을", "베어", "휘두르", "찌른", "attack")
-    ):
+    # Fallback is not a language model. Only a whole, unambiguous attack utterance
+    # may trigger damage; mentioning a goblin inside another request is insufficient.
+    attack = re.fullmatch(
+        r"(?:나는\s+)?(?:눈앞\s+)?(?:(첫\s*번째|두\s*번째)\s+)?"
+        r"고블린(?:을|에게)\s+(?:검으로\s+)?(?:공격한다|공격하겠다|공격할게|검을\s+휘두르겠다)[.!]?",
+        normalized,
+    )
+    english = re.fullmatch(r"attack\s+(goblin_001|goblin_002)[.!]?", normalized)
+    if attack or english:
         target = (
             "goblin_002"
-            if any(word in normalized for word in ("두 번째", "두번째", "goblin_002"))
+            if (
+                (attack and attack[1] and attack[1].startswith("두"))
+                or (english and english[1] == "goblin_002")
+            )
             else "goblin_001"
         )
         return ActionProposal("basic_attack", "attack", (target,), None, None)

@@ -80,7 +80,7 @@ P0에는 실제 사용하는 웹 패키지만 설치했다. SQLAlchemy/Alembic�
 | P1 | STATE-001 / P0 | `backend/app/storage.py`, `backend/app/api.py`의 migration/transaction | 원자 commit, rollback, 중복 키, stale version, FK, 재시작 복원 | 완료(초기 schema) |
 | P2 | RULES-001 / P1 | `backend/app/game.py`, 고정 mock RNG fixture | 은신 DC 경계와 잘못된 장면 거부 | 완료(은신 subset) |
 | P3 | VERTICAL-001A / P2 | `backend/app/api.py`, `frontend/app/campaign.tsx` | mock 은신 1턴, commit 후 서사, API 복원, 중복 요청 1회 반영 | 완료 |
-| P4a | AI-001 / P3 + 실제 접속 사양 | `backend/app/ai.py`의 Luna/DeepSeek 호환 adapter, 이후 `ai/context.py`, `ai/prompts/` | adapter·JSON schema·timeout·fallback 골격 및 GPT-5.6 Luna smoke 완료; 품질 평가 잔여 | 3~5일 |
+| P4a | AI-001 / P3 + 실제 접속 사양 | `backend/app/ai.py`, `ai_metrics.py`, `evaluation.py`, `scripts/evaluate_ai.py` | adapter·smoke, 26개 합성 corpus·호출/토큰/지연 계측 구현, 실제 Luna 12개 제한 표본 일치; 나머지14개·100개 확장·서사/장시간 의미 평가 잔여 | 진행 중 |
 | P4b | JEV-001 / P4a + JEV 사양 | `backend/app/ai.py` 선택적 JEV route, 이후 평가 trace | no-op/fallback 골격 완료; 실제 endpoint batch 분류와 고정 코퍼스 비교 잔여 | 2~3일 |
 | P5a | VERTICAL-002 / P4a | `memory/`, `world/knowledge.py`, `game/quests.py`, social commands | Harlan에게 거짓말, belief/truth 분리, 관계·퀘스트 검증 | 3~5일 |
 | P5b | VERTICAL-003 / P2,P3 | `game/{combat,movement,inventory,conditions}.py`, 전투 API/UI | initiative, 이동, 기본 공격/피해, 종료, 저장 후 전투 재개 | 3~5일 |

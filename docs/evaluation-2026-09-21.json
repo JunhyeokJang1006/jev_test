@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-21",
+  "base_commit": "986ab63",
+  "working_changes": "AI metrics, evaluation harness and conservative mock target parsing",
+  "command": "GM_PROVIDER=luna uv run --locked python scripts/evaluate_ai.py --live --provider luna --limit 12 --max-calls 12",
+  "model": "gpt-5.6-luna",
+  "mode": "live",
+  "corpus_size": 26,
+  "selected_cases": 12,
+  "complete": false,
+  "selected_passed": true,
+  "correct": 12,
+  "model_evaluated": 12,
+  "fallback_count": 0,
+  "http_calls": 12,
+  "latency_ms": {"p50": 1375.126, "p95": 2475.69},
+  "tokens": {"input": 10088, "output": 818, "missing_usage_calls": 0},
+  "case_metrics": [
+    {"id": "travel_market", "correct": true, "latency_ms": 2475.69, "input_tokens": 833, "output_tokens": 80},
+    {"id": "travel_inn", "correct": true, "latency_ms": 1928.894, "input_tokens": 771, "output_tokens": 87},
+    {"id": "travel_warehouse", "correct": true, "latency_ms": 1735.841, "input_tokens": 775, "output_tokens": 84},
+    {"id": "travel_gate_locked", "correct": true, "latency_ms": 1375.126, "input_tokens": 772, "output_tokens": 59},
+    {"id": "travel_unreachable", "correct": true, "latency_ms": 1673.331, "input_tokens": 835, "output_tokens": 52},
+    {"id": "talk_harlan", "correct": true, "latency_ms": 1314.22, "input_tokens": 832, "output_tokens": 77},
+    {"id": "talk_mira", "correct": true, "latency_ms": 999.571, "input_tokens": 833, "output_tokens": 34},
+    {"id": "talk_oren", "correct": true, "latency_ms": 1934.776, "input_tokens": 773, "output_tokens": 74},
+    {"id": "talk_absent", "correct": true, "latency_ms": 1878.398, "input_tokens": 831, "output_tokens": 61},
+    {"id": "hide_door", "correct": true, "latency_ms": 1353.107, "input_tokens": 831, "output_tokens": 72},
+    {"id": "hide_shadow", "correct": true, "latency_ms": 1287.497, "input_tokens": 832, "output_tokens": 73},
+    {"id": "forbidden_attack", "correct": true, "latency_ms": 1154.967, "input_tokens": 1170, "output_tokens": 65}
+  ],
+  "limits": ["No engine or narrator invocation", "Synthetic fixture state only", "No live player database", "Not a full-corpus or long-session evaluation"]
+}

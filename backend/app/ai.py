@@ -15,6 +15,7 @@ import httpx
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field
 
+from .ai_metrics import add_usage, tracked_call
 from .context import scene_context
 from .game import ActionProposal, TurnOutcome, interpret_mock
 from .memory import actor_context
@@ -107,23 +108,25 @@ def _chat(
         payload["max_tokens"] = 700
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
-    response = httpx.post(
-        f"{base_url.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json=payload,
-        timeout=float(os.getenv("AI_TIMEOUT_SECONDS", "12")),
-    )
-    response.raise_for_status()
-    body = response.json()
-    if not isinstance(body, dict):
-        raise ValueError("provider returned non-object response")
-    choices = body.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise ValueError("provider returned no choices")
-    content = choices[0]["message"]["content"]
-    if not isinstance(content, str):
-        raise ValueError("provider returned non-text content")
-    return name, content
+    with tracked_call(name, model, json_mode=json_mode) as metric:
+        response = httpx.post(
+            f"{base_url.rstrip('/')}/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=float(os.getenv("AI_TIMEOUT_SECONDS", "12")),
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict):
+            raise ValueError("provider returned non-object response")
+        add_usage(metric, body)
+        choices = body.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise ValueError("provider returned no choices")
+        content = choices[0]["message"]["content"]
+        if not isinstance(content, str):
+            raise ValueError("provider returned non-text content")
+        return name, content
 
 
 def interpret_action(text: str, state: dict[str, Any] | None = None) -> tuple[ActionProposal, str]:
