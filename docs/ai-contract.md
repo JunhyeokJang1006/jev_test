@@ -107,6 +107,14 @@ prompt만으로 모든 모순/비밀 누출을 막는다고 가정하지 않는�
 commit 후 서술 실패는 outcome/fallback으로 반환하여 상태 변경을 재요청하지 않게 한다.
 통신 오류는 같은 request_id로 조회/재송신하고 본문이 바뀌면 새 ID를 발급한다.
 
+현재 복구 경로는 동일 본문의 `POST /api/game/turn` 재송신이다. 위 표의 턴 GET·SSE·debug는
+목표 계약이며 아직 구현하지 않았다. 재송신 응답은 해당 턴 당시의 결과이므로 다른 탭이 더
+진행했다면 최신 캠페인 GET과 구분해야 한다. 재시도에서 expected_state_version을 최신 값으로
+바꾸면 동일 요청이 아니라 본문 충돌이 된다. 미해결 요청의 입력을 고쳐 보내지 않는다.
+판정 commit 직후 서사 생성 중에 재송신하면 `narrative_status: pending`인 저장 결과를
+받을 수 있다. 이는 기계 상태의 확정이며 서사 완료를 뜻하지 않는다. 후속 GET에서 완료된
+서사를 조회할 수 있지만 프로세스 종료로 남은 pending 서사의 자동 재생성은 아직 없다.
+
 SSE는 committed→narrative_chunk→completed/fallback 순서다. turn_id와 연번을 붙인다.
 Last-Event-ID에서 저장한 내용을 재전송하고 알 수 없는 ID는 GET으로 전체 결과를 조회한다.
 전송 메시지와 DB domain event를 구분하며 재전송이 상태를 바꾸지 않는다.

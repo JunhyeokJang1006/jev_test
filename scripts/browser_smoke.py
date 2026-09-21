@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -9,11 +10,131 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import httpx
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def verify_turn_recovery(browser) -> None:
+    """Actual mock-server commits survive response loss without a second turn."""
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto("http://127.0.0.1:3000")
+    send = page.get_by_role("button", name="행동 보내기", exact=True)
+    retry = page.get_by_role("button", name="같은 행동 재시도", exact=True)
+    expect(send).to_be_enabled()
+    campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+    campaign_url = f"http://127.0.0.1:8000/api/campaign/{campaign_id}"
+    outbox = "luna-realms-turn-outbox"
+
+    for mode in ("before_send", "after_commit", "malformed", "server_error", "proxy_timeout"):
+        before = httpx.get(campaign_url).json()["state_version"]
+        sent = []
+
+        def lose_response(route, *, sent=sent, mode=mode):
+            sent.append(route.request.post_data)
+            assert page.evaluate("key => localStorage.getItem(key)", outbox) == sent[0]
+            if mode == "before_send":
+                route.abort()
+                return
+            response = route.fetch()
+            assert response.ok
+            if mode == "after_commit":
+                route.abort()
+            elif mode == "malformed":
+                route.fulfill(status=200, content_type="application/json", body='{"ok":true}')
+            elif mode == "server_error":
+                route.fulfill(
+                    status=503, content_type="application/json", body='{"detail":"unavailable"}'
+                )
+            else:
+                route.fulfill(
+                    status=408, content_type="application/json", body='{"detail":"timeout"}'
+                )
+
+        page.route("**/api/game/turn", lose_response)
+        page.get_by_label("행동", exact=True).fill("주변 조사")
+        send.click()
+        expect(retry).to_be_enabled()
+        expect(send).to_be_disabled()
+        expect(page.get_by_role("button", name="세이브", exact=True)).to_be_disabled()
+        expect(page.get_by_role("button", name="복원", exact=True)).to_be_disabled()
+        assert len(sent) == 1
+        recorded = sent[0]
+        assert json.loads(recorded)["expected_state_version"] == before
+        assert httpx.get(campaign_url).json()["state_version"] == before + (mode != "before_send")
+        if mode == "after_commit":
+            later = httpx.post(
+                "http://127.0.0.1:8000/api/game/turn",
+                json={
+                    "campaign_id": campaign_id,
+                    "request_id": str(uuid4()),
+                    "expected_state_version": before + 1,
+                    "input": "하를란과 대화",
+                },
+            )
+            assert later.status_code == 200
+        page.unroute("**/api/game/turn", lose_response)
+        # Another tab sees the same unresolved envelope and cannot start a new turn.
+        other = page.context.new_page()
+        other.goto("http://127.0.0.1:3000")
+        expect(other.get_by_role("button", name="같은 행동 재시도", exact=True)).to_be_enabled()
+        expect(other.get_by_role("button", name="행동 보내기", exact=True)).to_be_disabled()
+        other.close()
+
+        if mode == "after_commit":
+            # Recovery must remain available even when initialization GET fails.
+            page.route("**/api/campaign/*", lambda route: route.abort())
+        page.reload()
+        expect(retry).to_be_enabled()
+        assert page.evaluate("key => localStorage.getItem(key)", outbox) == recorded
+        if mode == "after_commit":
+            page.unroute("**/api/campaign/*")
+        replayed = []
+
+        def capture_retry(route, *, replayed=replayed):
+            replayed.append(route.request.post_data)
+            route.continue_()
+
+        page.route("**/api/game/turn", capture_retry)
+        retry.click()
+        expect(send).to_be_enabled()
+        assert replayed == [recorded]
+        current = httpx.get(campaign_url).json()
+        assert current["state_version"] == before + 1 + (mode == "after_commit")
+        expect(page.locator(".narrative")).to_have_text(current["latest_turn"]["narrative"])
+        assert page.evaluate("key => localStorage.getItem(key)", outbox) is None
+        page.unroute("**/api/game/turn", capture_retry)
+
+    # Corrupt recovery data is preserved, and no new action may replace it.
+    page.evaluate("key => localStorage.setItem(key, '{broken')", outbox)
+    page.reload()
+    expect(page.locator(".campaign .error")).to_contain_text("복구 기록이 손상")
+    expect(send).to_be_disabled()
+    assert page.evaluate("key => localStorage.getItem(key)", outbox) == "{broken"
+    page.evaluate("key => localStorage.removeItem(key)", outbox)
+    page.reload()
+    expect(send).to_be_enabled()
+
+    # Quota/access failures must prevent the HTTP mutation altogether.
+    before = httpx.get(campaign_url).json()["state_version"]
+    page.evaluate("""() => {
+        const original = Storage.prototype.setItem;
+        Storage.prototype.setItem = function(key, value) {
+            if (key === 'luna-realms-turn-outbox') {
+                throw new DOMException('Quota exceeded', 'QuotaExceededError');
+            }
+            return original.call(this, key, value);
+        };
+    }""")
+    page.get_by_label("행동", exact=True).fill("주변 조사")
+    send.click()
+    expect(page.locator(".campaign .error")).to_contain_text("Quota exceeded")
+    assert httpx.get(campaign_url).json()["state_version"] == before
+    context.close()
 
 
 def wait_for(url: str, process: subprocess.Popen) -> None:
@@ -88,7 +209,9 @@ def main() -> None:
                 wait_for("http://127.0.0.1:3000", frontend)
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch(channel="chrome", headless=True)
-                    page = browser.new_page(viewport={"width": 1280, "height": 900})
+                    verify_turn_recovery(browser)
+                    context = browser.new_context(viewport={"width": 1280, "height": 900})
+                    page = context.new_page()
                     failures = []
                     page.on("pageerror", lambda error: failures.append(str(error)))
                     page.goto("http://127.0.0.1:3000")
@@ -227,6 +350,23 @@ def main() -> None:
                         expect(page.get_by_label("캐릭터 성장")).to_contain_text("레벨 4")
                         click("복원")
                         expect(page.get_by_text("소지품: 왕실 봉인", exact=True)).to_be_visible()
+                    observer = context.new_page()
+                    observer.goto("http://127.0.0.1:3000")
+                    expect(
+                        observer.get_by_role("button", name="행동 보내기", exact=True)
+                    ).to_be_enabled()
+                    click("복원")
+                    expect(
+                        observer.get_by_role("button", name="행동 보내기", exact=True)
+                    ).to_be_disabled()
+                    expect(
+                        observer.get_by_text("다른 탭에서 캠페인이 변경되었습니다.", exact=False)
+                    ).to_be_visible()
+                    observer.reload()
+                    expect(
+                        observer.get_by_role("button", name="행동 보내기", exact=True)
+                    ).to_be_enabled()
+                    observer.close()
                     page.evaluate("localStorage.clear()")
                     delayed_start = []
                     page.route("**/api/campaign", lambda route: delayed_start.append(route))
@@ -256,6 +396,8 @@ def main() -> None:
                 print(
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건 완주, "
                     "새로고침, 반복 복원, "
+                    "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
+                    "다중 탭·저장소 실패 차단, "
                     "서버 저장 선택·브라우저 저장 초기화 후 복원, 모바일 지도 클릭, JS 오류 없음"
                 )
             finally:

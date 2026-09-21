@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 193 passed. 기존 검사와 복수 적 대상·점유/BFS·사망 제외·전원 제압·사망 후 중단·단일 적 저장 보존 확인 |
+| API/AI 테스트 | PASS | pytest 195 passed. 복수 적·저장 보존 회귀와 후속 턴 뒤 재송신, 서사 생성 중 pending 결과 재생 검사 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -22,7 +22,7 @@
 
 추가 독립 검증: Astra가 원본 대비 전체 요구사항을 감사했고 Sol이 이번 저장·AI 경계를
 읽기 전용으로 재검증했다. Sol의 mock 전체 테스트는 21 passed이며 이번 변경의 차단 이슈는 없다.
-pending 서사 자동 회복과 UI 재조회는 미완성으로 추적한다.
+pending 서사 자동 회복은 미완성으로 추적한다. 아래 재접속 개선에서 UI의 최신 캠페인 재조회가 추가됐다.
 
 전투 확장 독립 검증: Sol이 RNG·반격·승패·멱등성을 검토했다. NPC 공격을 고블린으로
 치환하던 mock 해석 오류를 수정한 뒤 전체 35 passed로 재검증했고 해당 차단은 해소됐다.
@@ -111,6 +111,14 @@ Next.js 개발 서버가 생성한 frontend/AGENTS.md와 CLAUDE.md는 도구 안
 사용자가 제공한 원본 기획서는 수정하지 않았다. 현재 SHA-256:
 `d919d3646b16a6b8e6f92a3505c8fb441147e43d2f7e25150fd6e3cbfa6d6b03`.
 
+재접속 복구: Astra writer가 exact-envelope outbox·20초 통신 제한·Web Locks를 구현했다.
+확장 Chrome 검사에서 전송 전 단절/commit 후 응답 유실/비정상 200/503/408, 새로고침,
+초기 GET 실패 후 재시도, 과거 replay 뒤 최신 서사 유지, 저장소 손상 보존·quota 실패 시 전송 차단,
+다른 탭의 저장 복원 후 기존 탭 즉시 차단을 확인했다. 기존 세 모험 경로·전투·모바일 검사도 통과했다.
+루트 전체 check는 195 tests·Ruff·TypeScript·production build PASS이며 Sol이 관련15개를
+독립 재실행하고 수정 후 잔여 차단 없음으로 판정했다. pending 서사는 완료로 표시하지 않지만
+자동 생성 재개는 하지 않는다. 사용자가 브라우저 저장소를 지운 경우 원 요청 복구도 보장하지 않는다.
+
 ## 미실행·미구현
 
 - Chrome 브라우저 자동화: 세 결말 실제 버튼 완주·새로고침·같은 저장 3회 복원·390px 폭 넘침 없음·JS 오류 없음 확인. 접근성 전체/시각 품질/30분 플레이 평가는 아직 미실행이다.
@@ -118,7 +126,7 @@ Next.js 개발 서버가 생성한 frontend/AGENTS.md와 CLAUDE.md는 도구 안
 - GPT-5.6 Luna/JEV 유료 품질 평가: smoke는 통과했으며 장시간 품질 평가는 별도 실행. API 호출은 비용이 발생할 수 있어 자동화 테스트에서 mock으로 격리한다.
 - 공급자 설정: OpenAI GPT-5.6 Luna를 우선 사용하고 DeepSeek/mock으로 fallback한다. 자동화 테스트는 비용 방지를 위해 GM_PROVIDER=mock으로 격리한다.
 - Phaser 탐험 지도·NPC/출구 클릭: Chrome 데스크톱·모바일 클릭 검사 통과. Tiled/전술 이동·SRD/게임 에셋 반입·30분 플레이·100개 회귀는 후속 구현/검증이다.
-- GitHub Actions 원격 실행·Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
+- GitHub Actions: 직전 `86098fb`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
 
 판정: 현재 머신에서 P0~P3 mock vertical slice와 상세 계획 준비 완료.
 전체 게임은 미완성이다. [완료 추적표](completion-tracker.md)의 규칙·모험·지도·기억·장시간 플레이 검증을 계속 진행한다.

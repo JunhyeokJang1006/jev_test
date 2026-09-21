@@ -1,7 +1,7 @@
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 
@@ -53,6 +53,48 @@ def test_stale_version_and_reused_request_id_are_rejected():
     assert request("POST", "/api/game/turn", json=stale).status_code == 409
     changed = {**payload, "input": "문을 연다"}
     assert request("POST", "/api/game/turn", json=changed).status_code == 409
+
+
+def test_lost_response_replay_after_later_turn_preserves_current_campaign(monkeypatch):
+    campaign = request("POST", "/api/campaign", json={}).json()
+    payload = {
+        "campaign_id": campaign["id"],
+        "request_id": "00000000-0000-4000-8000-000000000031",
+        "expected_state_version": 0,
+        "input": "숨는다",
+    }
+    committed = request("POST", "/api/game/turn", json=payload)
+    assert committed.status_code == 200
+    later = request(
+        "POST",
+        "/api/game/turn",
+        json={
+            "campaign_id": campaign["id"],
+            "expected_state_version": 1,
+            "input": "여관 주인에게 인사한다",
+        },
+    )
+    assert later.status_code == 200
+    current = request("GET", f"/api/campaign/{campaign['id']}").json()
+
+    def unexpected(*args):
+        raise AssertionError("committed replay must not interpret, roll, or narrate again")
+
+    monkeypatch.setattr(api, "interpret_action", unexpected)
+    monkeypatch.setattr(api, "with_narration", unexpected)
+    monkeypatch.setattr(Dice, "roll", unexpected)
+    for _ in range(3):
+        replay = request("POST", "/api/game/turn", json=payload)
+        assert replay.status_code == 200
+        assert replay.json() == committed.json()
+        assert request("GET", f"/api/campaign/{campaign['id']}").json() == current
+    assert current["state_version"] == 2
+    db = connect()
+    try:
+        assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 2
+        assert db.execute("SELECT COUNT(*) FROM turns").fetchone()[0] == 2
+    finally:
+        db.close()
 
 
 def test_unknown_action_records_event_without_changing_mechanical_state():
@@ -191,6 +233,46 @@ def test_narration_runs_after_commit_and_failure_preserves_replay(monkeypatch):
     assert response.json()["state"]["hidden"] is True
     assert request("POST", "/api/game/turn", json=payload).json() == response.json()
     assert observed == [1]
+
+
+def test_replay_during_narration_returns_committed_pending_without_reexecution(monkeypatch):
+    campaign = request("POST", "/api/campaign", json={}).json()
+    payload = {
+        "campaign_id": campaign["id"],
+        "request_id": "00000000-0000-4000-8000-000000000032",
+        "expected_state_version": 0,
+        "input": "숨는다",
+    }
+    committed = Event()
+    resume = Event()
+    narrations = []
+
+    def paused_narration(text, resolved, provider):
+        narrations.append(text)
+        committed.set()
+        assert resume.wait(timeout=5)
+        return resolved, "mock"
+
+    monkeypatch.setattr(api, "with_narration", paused_narration)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        first = pool.submit(request, "POST", "/api/game/turn", json=payload)
+        try:
+            assert committed.wait(timeout=5)
+            replay = request("POST", "/api/game/turn", json=payload)
+            assert replay.status_code == 200
+            assert replay.json()["state_version"] == 1
+            assert replay.json()["narrative_status"] == "pending"
+            current = request("GET", f"/api/campaign/{campaign['id']}").json()
+            assert current["latest_turn"]["narrative_status"] == "pending"
+            assert current["state_version"] == 1
+        finally:
+            resume.set()
+        completed = first.result(timeout=5)
+    assert completed.status_code == 200
+    assert completed.json()["narrative_status"] == "completed"
+    assert completed.json()["turn_id"] == replay.json()["turn_id"]
+    assert narrations == [payload["input"]]
+    assert request("POST", "/api/game/turn", json=payload).json() == completed.json()
 
 
 def test_rejected_action_returns_422_and_leaves_state_intact(monkeypatch):

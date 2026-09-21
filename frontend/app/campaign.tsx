@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import PixelScene from "./pixel-scene";
 import Battlefield from "./battlefield";
+import { boundedFetch, CAMPAIGN_KEY, clearPending, MUTATION_LOCK, OUTBOX_KEY, readPending, storePending, type PendingTurn } from "./turn-recovery";
 
 type Campaign = { id: string; name: string; state_version: number; state: Record<string, any>; latest_turn?: Turn | null; actions?: string[] };
-type Turn = { turn_id: string; state_version: number; narrative: string; dice: Record<string, any>; event: { type: string; payload: Record<string, any> }; state: Record<string, any> };
+type Turn = { turn_id: string; state_version: number; narrative: string; narrative_status?: string; dice: Record<string, any>; event: { type: string; payload: Record<string, any> }; state: Record<string, any> };
 type Save = { snapshot_id: string; campaign_id: string; campaign_name: string; state_version: number; created_at: string };
 type EndingChoice = { ending: "law" | "mercy" | "exile"; command: string; consequence: string; campaignId: string; version: number };
 
@@ -14,6 +15,7 @@ const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://127.0.0.1:8000";
 export default function CampaignPanel() {
   const initialized = useRef(false);
   const pending = useRef(false);
+  const activeCampaignId = useRef<string | null>(null);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [narrative, setNarrative] = useState("Greyhaven Inn의 문이 빗소리 너머로 흔들린다.");
   const [input, setInput] = useState("나는 문 옆 그림자에 숨어 경비병이 지나가기를 기다린다.");
@@ -22,6 +24,10 @@ export default function CampaignPanel() {
   const [error, setError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [endingChoice, setEndingChoice] = useState<EndingChoice | null>(null);
+  const [unresolved, setUnresolved] = useState<PendingTurn | null>(null);
+  const [storageBlocked, setStorageBlocked] = useState(false);
+  const [campaignChanged, setCampaignChanged] = useState(false);
+  const actionsBlocked = busy || starting || !!unresolved || storageBlocked || campaignChanged;
   const [saves, setSaves] = useState<Save[]>([]);
   const [selectedSave, setSelectedSave] = useState("");
   const [saveTotal, setSaveTotal] = useState(0);
@@ -30,12 +36,64 @@ export default function CampaignPanel() {
   const [listError, setListError] = useState("");
   const listPending = useRef(false);
 
+  function syncOutbox() {
+    try {
+      setUnresolved(readPending()); setStorageBlocked(false);
+      setCampaignChanged(!!activeCampaignId.current && localStorage.getItem(CAMPAIGN_KEY) !== activeCampaignId.current);
+    }
+    catch (caught) {
+      setStorageBlocked(true);
+      setError(caught instanceof Error ? caught.message : "브라우저 저장소에 접근할 수 없습니다.");
+    }
+  }
+
+  async function mutate(task: () => Promise<void>) {
+    if (pending.current) return;
+    pending.current = true; setBusy(true); setError("");
+    try {
+      if (!navigator.locks) throw new Error("안전한 행동 복구를 위해 브라우저의 보안 연결 및 Web Locks 지원이 필요합니다.");
+      await navigator.locks.request(MUTATION_LOCK, { ifAvailable: true }, async lock => {
+        if (!lock) throw new Error("다른 탭에서 처리 중입니다. 잠시 후 다시 시도해 주세요.");
+        await task();
+      });
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "요청을 완료하지 못했습니다."); }
+    finally { syncOutbox(); pending.current = false; setBusy(false); }
+  }
+
+  async function fetchCampaign(id: string) {
+    const response = await boundedFetch(`${apiBase}/api/campaign/${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error("캠페인을 가져오지 못했습니다. 연결 확인 후 새로고침해 주세요.");
+    const current = await response.json();
+    if (current.id !== id || !Number.isSafeInteger(current.state_version) || !current.state || typeof current.state !== "object") throw new Error("캠페인 응답을 확인할 수 없습니다.");
+    return current as Campaign;
+  }
+
+  function showCampaign(current: Campaign) {
+    activeCampaignId.current = current.id;
+    setCampaignChanged(localStorage.getItem(CAMPAIGN_KEY) !== current.id);
+    setCampaign(current);
+    if (current.latest_turn?.narrative) setNarrative(current.latest_turn.narrative);
+  }
+
+  function requireResolved() {
+    if (readPending()) throw new Error("먼저 미해결 행동을 재시도해 주세요.");
+    if (campaign && localStorage.getItem(CAMPAIGN_KEY) !== campaign.id) throw new Error("다른 탭에서 캠페인이 변경되었습니다. 새로고침해 주세요.");
+  }
+
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === OUTBOX_KEY || event.key === CAMPAIGN_KEY || event.key === null) syncOutbox();
+    };
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, []);
+
   async function refreshSaves(preferred?: string, append = false) {
     if (listPending.current) return;
     listPending.current = true; setListBusy(true); setListError("");
     try {
       const offset = append ? saveOffset : 0;
-      const response = await fetch(`${apiBase}/api/saves?limit=50&offset=${offset}`, { cache: "no-store" });
+      const response = await boundedFetch(`${apiBase}/api/saves?limit=50&offset=${offset}`);
       if (!response.ok) throw new Error("save_list_failed");
       const body: { snapshots: Save[]; total: number } = await response.json();
       const merged = append ? [...saves, ...body.snapshots.filter(item => !saves.some(old => old.snapshot_id === item.snapshot_id))] : body.snapshots;
@@ -55,55 +113,65 @@ export default function CampaignPanel() {
     void refreshSaves();
     void (async () => {
       try {
-      const savedId = window.localStorage.getItem("luna-realms-campaign-id");
+      const recovered = readPending();
+      setUnresolved(recovered);
+      const savedId = recovered?.envelope.campaign_id ?? window.localStorage.getItem(CAMPAIGN_KEY);
       const response = savedId
-        ? await fetch(`${apiBase}/api/campaign/${savedId}`)
-        : await fetch(`${apiBase}/api/campaign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+        ? await boundedFetch(`${apiBase}/api/campaign/${encodeURIComponent(savedId)}`)
+        : await boundedFetch(`${apiBase}/api/campaign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
       if (!response.ok) { setError("캠페인을 시작할 수 없습니다."); return; }
       const created = await response.json();
-      window.localStorage.setItem("luna-realms-campaign-id", created.id);
-      setCampaign(created);
-      if (created.latest_turn?.narrative) setNarrative(created.latest_turn.narrative);
+      if (!savedId) window.localStorage.setItem(CAMPAIGN_KEY, created.id);
+      showCampaign(created);
       } catch { setError("서버에 연결할 수 없습니다. 연결을 확인한 뒤 새로고침해 주세요."); }
-      finally { setStarting(false); }
+      finally { syncOutbox(); setStarting(false); }
     })();
   }, []);
 
-  async function sendTurn(action = input, confirmation?: EndingChoice) {
-    if (!campaign || pending.current || !action.trim()) return;
-    if (confirmation && confirmation.campaignId !== campaign.id) { setEndingChoice(null); return; }
-    pending.current = true;
-    setEndingChoice(null);
-    setBusy(true); setError("");
-    try {
-      const requestId = crypto.randomUUID();
-      const response = await fetch(`${apiBase}/api/game/turn`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campaign_id: campaign.id, request_id: requestId, expected_state_version: confirmation?.version ?? campaign.state_version, input: action, ...(confirmation ? { confirmed_ending: confirmation.ending } : {}) }) });
+  async function sendTurn(action = input, confirmation?: EndingChoice, retry = false) {
+    if (starting || (!retry && (!campaign || !action.trim()))) return;
+    await mutate(async () => {
+      let turn = readPending();
+      if (!retry) {
+        requireResolved();
+        if (!campaign || (confirmation && confirmation.campaignId !== campaign.id)) return;
+        turn = storePending({ campaign_id: campaign.id, request_id: crypto.randomUUID(), expected_state_version: confirmation?.version ?? campaign.state_version, input: action, ...(confirmation ? { confirmed_ending: confirmation.ending } : {}) });
+      }
+      if (!turn) return;
+      setUnresolved(turn); setEndingChoice(null);
+      const response = await boundedFetch(`${apiBase}/api/game/turn`, { method: "POST", headers: { "Content-Type": "application/json" }, body: turn.raw });
       const body = await response.json();
       if (!response.ok) {
+        // Only a recognizable, definitive client rejection releases the envelope.
+        const definitive = (response.status === 404 && body?.detail === "campaign_not_found")
+          || (response.status === 409 && ["stale_state_version", "request_id_reused_with_different_body", "turn_conflict"].includes(body?.detail))
+          || (response.status === 422 && (Array.isArray(body?.detail) || typeof body?.detail === "string"))
+          || (response.status === 409 && body?.detail?.code === "ending_confirmation_required" && ["law", "mercy", "exile"].includes(body.detail.ending) && typeof body.detail.command === "string" && typeof body.detail.consequence === "string");
+        if (!definitive) throw new Error("처리 결과를 확인하지 못했습니다. 같은 행동을 재시도해 주세요.");
+        // Preserve recovery until the displayed version is synchronized as well.
+        if (response.status !== 404) showCampaign(await fetchCampaign(turn.envelope.campaign_id));
+        else { setCampaign(null); activeCampaignId.current = null; }
+        clearPending(turn); setUnresolved(null);
         if (response.status === 409 && body.detail?.code === "ending_confirmation_required") {
-          setEndingChoice({ ...body.detail, campaignId: campaign.id, version: campaign.state_version });
+          setEndingChoice({ ...body.detail, campaignId: turn.envelope.campaign_id, version: turn.envelope.expected_state_version });
           return;
         }
-        if (response.status === 409) {
-          const refreshed = await fetch(`${apiBase}/api/campaign/${campaign.id}`);
-          if (refreshed.ok) {
-            const current = await refreshed.json();
-            setCampaign(current);
-            if (current.latest_turn?.narrative) setNarrative(current.latest_turn.narrative);
-          }
-        }
-        throw new Error(body.detail ?? "턴을 처리할 수 없습니다.");
+        throw new Error(typeof body.detail === "string" ? body.detail : "턴을 처리할 수 없습니다.");
       }
-      setNarrative(body.narrative); setCampaign({ ...campaign, state_version: body.state_version, state: body.state, actions: body.actions, latest_turn: body });
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "알 수 없는 오류"); }
-    finally { pending.current = false; setBusy(false); }
+      if (!body || typeof body.turn_id !== "string" || !Number.isSafeInteger(body.state_version) || body.state_version !== turn.envelope.expected_state_version + 1 || typeof body.narrative !== "string" || !body.state || typeof body.state !== "object" || !Array.isArray(body.actions)) throw new Error("턴 응답을 확인할 수 없습니다. 같은 행동을 재시도해 주세요.");
+      // A replay can be older than the campaign: use the authoritative latest view.
+      const current = await fetchCampaign(turn.envelope.campaign_id);
+      if (current.state_version < body.state_version) throw new Error("최신 상태를 확인할 수 없습니다. 같은 행동을 재시도해 주세요.");
+      window.localStorage.setItem(CAMPAIGN_KEY, current.id);
+      clearPending(turn); setUnresolved(null); showCampaign(current);
+    });
   }
 
   async function saveCampaign() {
-    if (!campaign || pending.current || listPending.current) return;
-    pending.current = true; setBusy(true);
+    if (!campaign || listPending.current) return;
+    requireResolved();
     try {
-    const response = await fetch(`${apiBase}/api/campaign/${campaign.id}/save`, { method: "POST" });
+    const response = await boundedFetch(`${apiBase}/api/campaign/${campaign.id}/save`, { method: "POST" });
     const body = await response.json();
     if (response.ok) {
       window.localStorage.setItem("luna-realms-snapshot-id", body.snapshot_id);
@@ -112,32 +180,32 @@ export default function CampaignPanel() {
     }
     setSaveMessage(response.ok ? `세이브 완료 · ${body.snapshot_id.slice(0, 8)}` : "세이브 실패");
     } catch { setSaveMessage("연결 오류로 저장하지 못했습니다."); }
-    finally { pending.current = false; setBusy(false); }
   }
 
   async function loadCampaign() {
-    if (starting || pending.current || listPending.current) return;
+    if (starting || listPending.current) return;
+    requireResolved();
     const snapshot = saves.find(item => item.snapshot_id === selectedSave);
     if (!snapshot) { setSaveMessage("복원할 저장을 선택해 주세요."); return; }
-    pending.current = true; setBusy(true);
     try {
-    const response = await fetch(`${apiBase}/api/campaign/${snapshot.campaign_id}/load`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snapshot_id: snapshot.snapshot_id }) });
+    const response = await boundedFetch(`${apiBase}/api/campaign/${snapshot.campaign_id}/load`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snapshot_id: snapshot.snapshot_id }) });
     if (!response.ok) { setSaveMessage("세이브를 불러올 수 없습니다."); return; }
     const restored = await response.json();
     window.localStorage.setItem("luna-realms-campaign-id", restored.id);
-    setCampaign(restored);
+    showCampaign(restored);
     setEndingChoice(null);
     setError("");
     setNarrative("저장된 캠페인을 복원했습니다.");
     setSaveMessage("복원 완료");
     } catch { setSaveMessage("연결 오류로 복원하지 못했습니다."); }
-    finally { pending.current = false; setBusy(false); }
   }
 
   return <section className="campaign" aria-label="Greyhaven 캠페인">
     <div className="campaign-heading"><div><p className="eyebrow">{campaign?.state.location_name ?? "GREYHAVEN"}</p><h2>{campaign?.name ?? "캠페인 준비 중"}</h2></div><span>{campaign?.state.day ?? 1}일 · {campaign?.state.time ?? "21:36"}</span></div>
-    {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} />)}
+    {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} />)}
     <p className="narrative">{narrative}</p>
+    {campaign?.latest_turn?.narrative_status === "pending" && <p className="note">판정은 저장되었습니다. 서사는 아직 완료되지 않았습니다.</p>}
+    {campaignChanged && <p className="error" role="alert">다른 탭에서 캠페인이 변경되었습니다. 새로고침해 현재 캠페인을 불러와 주세요.</p>}
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · 생존 적 {(campaign.state.combat.enemies ?? [{ hp: campaign.state.combat.enemy_hp }]).filter((enemy: { hp: number }) => enemy.hp > 0).length}명</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>
     {campaign?.state.progression && <section aria-label="캐릭터 성장">
@@ -164,17 +232,22 @@ export default function CampaignPanel() {
     {campaign?.latest_turn?.dice?.roll != null && <p aria-label="최근 판정">주사위 {campaign.latest_turn.dice.roll} + {campaign.latest_turn.dice.bonus ?? 0} = {campaign.latest_turn.dice.total ?? campaign.latest_turn.dice.roll} · {campaign.latest_turn.dice.dc != null ? `DC ${campaign.latest_turn.dice.dc}` : "전투 판정"} · {campaign.latest_turn.dice.outcome}</p>}
     {campaign?.state.world_consequences && <p aria-label="세계 변화">통행세: {({ suspended: "징수 잠정 중단", contested: "공개 분쟁", unchanged: "변화 없음" } as Record<string, string>)[campaign.state.world_consequences.tax_collection]} · 피난민: {campaign.state.world_consequences.refugees === "evacuated" ? "피난 완료" : "도시 잔류"}</p>}
     {campaign?.state.world_effects && <p aria-label="도시 공고">{campaign.state.world_effects.applied ? campaign.state.world_effects.notice : `사건의 소식이 퍼지고 있습니다. 공고까지 ${Math.max(0, campaign.state.world_effects.effective_at - (campaign.state.elapsed_minutes ?? 0))}분.`}</p>}
-    <nav aria-label="가능한 행동">{campaign?.actions?.map(action => <button className="secondary" key={action} type="button" disabled={busy} onClick={() => void sendTurn(action)}>{action}</button>)}</nav>
-    <label htmlFor="action">행동</label><textarea id="action" value={input} onChange={(event) => setInput(event.target.value)} disabled={!campaign || busy} />
-    <button type="button" onClick={() => void sendTurn()} disabled={!campaign || busy}>{busy ? "판정 중…" : "행동 보내기"}</button>
+    <nav aria-label="가능한 행동">{campaign?.actions?.map(action => <button className="secondary" key={action} type="button" disabled={actionsBlocked} onClick={() => void sendTurn(action)}>{action}</button>)}</nav>
+    <label htmlFor="action">행동</label><textarea id="action" value={input} onChange={(event) => setInput(event.target.value)} disabled={!campaign || actionsBlocked} />
+    <button type="button" onClick={() => void sendTurn()} disabled={!campaign || actionsBlocked}>{busy ? "판정 중…" : "행동 보내기"}</button>
+    {unresolved && <section aria-label="행동 복구" role="alert">
+      <p>이전 행동의 처리 결과를 확인해야 합니다. 새 행동과 저장·복원은 확인 후 사용할 수 있습니다.</p>
+      <p>미해결 행동: {unresolved.envelope.input}</p>
+      <button type="button" disabled={busy || starting || storageBlocked} onClick={() => void sendTurn(undefined, undefined, true)}>같은 행동 재시도</button>
+    </section>}
     {endingChoice && <section aria-label="결말 선택 확인" role="alert">
       <h3>{endingChoice.command} — 이 선택을 확정할까요?</h3>
       <p>{endingChoice.consequence}</p>
       <p>확정 전에는 상태가 바뀌지 않습니다. 필요하면 먼저 세이브하세요.</p>
-      <button type="button" disabled={busy} onClick={() => void sendTurn(endingChoice.command, endingChoice)}>결말 확정</button>
-      <button className="secondary" type="button" disabled={busy} onClick={() => setEndingChoice(null)}>선택 취소</button>
+      <button type="button" disabled={actionsBlocked} onClick={() => void sendTurn(endingChoice.command, endingChoice)}>결말 확정</button>
+      <button className="secondary" type="button" disabled={actionsBlocked} onClick={() => setEndingChoice(null)}>선택 취소</button>
     </section>}
-    <button className="secondary" type="button" onClick={() => void saveCampaign()} disabled={!campaign || busy || listBusy}>세이브</button>
+    <button className="secondary" type="button" onClick={() => void mutate(saveCampaign)} disabled={!campaign || actionsBlocked || listBusy}>세이브</button>
     <label htmlFor="save-slot">저장 선택 ({saveTotal})</label>
     <select id="save-slot" style={{ width: "100%", minWidth: 0 }} value={selectedSave} onChange={event => setSelectedSave(event.target.value)} disabled={busy || listBusy || !saves.length}>
       {!saves.length && <option value="">저장 없음</option>}
@@ -182,7 +255,7 @@ export default function CampaignPanel() {
     </select>
     <button className="secondary" type="button" onClick={() => void refreshSaves()} disabled={busy || listBusy}>목록 새로고침</button>
     {saveOffset < saveTotal && <button className="secondary" type="button" onClick={() => void refreshSaves(undefined, true)} disabled={busy || listBusy}>이전 저장 더 불러오기</button>}
-    <button className="secondary" type="button" onClick={() => void loadCampaign()} disabled={starting || !selectedSave || busy || listBusy}>복원</button>
+    <button className="secondary" type="button" onClick={() => void mutate(loadCampaign)} disabled={!selectedSave || actionsBlocked || listBusy}>복원</button>
     {listError && <p className="error" role="alert">{listError}</p>}
     {campaign && campaign.state.journal?.length > 0 && <details><summary>모험 기록 ({campaign.state.journal.length})</summary><ol>{campaign.state.journal.map((entry: { text: string; day: number; time: string }, index: number) => <li key={index}>{entry.day}일 {entry.time} · {entry.text}</li>)}</ol></details>}
     {saveMessage && <p className="note">{saveMessage}</p>}
