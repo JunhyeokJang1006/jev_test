@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from . import followup
+from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
 LOCATIONS = {
@@ -106,7 +107,9 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     return actions
 
 
-def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) -> dict | None:
+def resolve_world(
+    state: dict[str, Any], intent: str, targets: tuple[str, ...], *, roller: Roller | None = None
+) -> dict | None:
     followup_intents = {command[0] for command in followup.COMMANDS.values()}
     if (
         intent
@@ -130,7 +133,14 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
     target = targets[0]
     minutes = 1
     clue = None
-    if intent in followup_intents:
+    check_result = None
+    if intent == "followup_check":
+        narrative, minutes, check_result = followup.check(
+            result, target, roller if roller is not None else Dice()
+        )
+    elif intent in followup_intents:
+        if intent == "followup_evidence":
+            minutes = followup.evidence_minutes(result, target)
         narrative = followup.apply(result, intent, targets)
     elif intent == "travel":
         if target not in location["exits"]:
@@ -267,6 +277,8 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
     advance_time(result, minutes)
     if intent == "talk":
         record_episode(result, target, "seal_discussion")
+    if intent == "followup_check" and target in {"oren_testimony", "safe_route"}:
+        record_episode(result, "npc_oren", "aftermath_persuasion")
     result["journal"].append(
         {
             "action": intent,
@@ -279,6 +291,7 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
     return {
         "event_type": "WORLD_ACTION_RESOLVED",
         "event_payload": {
+            **(check_result or {}),
             "intent": intent,
             "target_id": target,
             "clue": clue,
@@ -290,5 +303,15 @@ def resolve_world(state: dict[str, Any], intent: str, targets: tuple[str, ...]) 
         },
         "state": result,
         "narrative": narrative,
-        "dice": {"outcome": "no_check_required"},
+        "dice": (
+            {
+                "roll": check_result["roll"],
+                "bonus": check_result["bonus"],
+                "total": check_result["roll"] + check_result["bonus"],
+                "dc": check_result["dc"],
+                "outcome": "success" if check_result["success"] else "failure",
+            }
+            if check_result
+            else {"outcome": "no_check_required"}
+        ),
     }

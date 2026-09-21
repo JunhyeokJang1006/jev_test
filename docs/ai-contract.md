@@ -19,6 +19,10 @@ HTTP 409의 `detail.code=ending_confirmation_required`와 공개 command/ending/
 원래 `quest.ending`은 보존한다. 기존 저장에 followup이 없어도 확정 선택에서 후속 사건을 시작한다.
 후속 사건 활성 시 서버가 허용하는 이동·대화·증거·해결 명령만 실행하며 과거 봉인 명령은 거부한다.
 결과의 공개 세계 변화와 직접 참여 NPC의 기억은 같은 턴에 저장한다. 부재 NPC에게 자동 전파하지 않는다.
+`followup_check`는 서버 d20 판정이며 단서당 1회만 허용한다. `attempts`에 공개 판정 수치,
+`complications`에 실패 결과를 저장한다. 이미 시도한 명령은 공개 행동과 모델 context에서 함께 제외한다.
+기존 저장의 누락된 attempts는 빈 이력으로 취급하되 이미 확보한 evidence는 다시 판정하지 않는다.
+정식 확보 15분, 판정 성공 2분/실패 5분, 실패 후 정식 확보 25분의 자체 시나리오 규칙이다.
 
 규칙 판정·event·state를 한 transaction으로 commit한 후 서사를 생성한다.
 commit 시점에는 기본 문장과 `narrative_status=pending`이 저장되고,

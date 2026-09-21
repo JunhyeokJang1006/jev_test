@@ -131,7 +131,7 @@ def resolve_action(
                 "outcome": "success" if success else "failure",
             },
         )
-    world_outcome = resolve_world(state, proposal.intent, proposal.target_ids)
+    world_outcome = resolve_world(state, proposal.intent, proposal.target_ids, roller=roller)
     if world_outcome is not None:
         return TurnOutcome(**world_outcome)
     if proposal.intent == "basic_attack":

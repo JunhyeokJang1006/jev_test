@@ -148,7 +148,10 @@ export default function CampaignPanel() {
       <h3>{campaign.state.followup.title}</h3>
       <p>{campaign.state.followup.resolution ?? campaign.state.followup.objective}</p>
       <p>진행: {campaign.state.followup.status === "completed" ? "해결" : "조사 중"} · 확보한 단서 {campaign.state.followup.evidence.length}/2</p>
+      {campaign.state.followup.status === "active" && <p>정식 확보: 15분, 판정 없음. 설득·몰래 접근: DC 14, 단서마다 한 번. 성공 2분, 실패 5분이며 이후 정식 확보에 25분이 걸립니다.</p>}
+      {(campaign.state.followup.complications ?? []).length > 0 && <p>발생한 문제: {campaign.state.followup.complications.map((item: string) => item === "oren_reluctant" ? "오렌의 경계" : "창고 경계 강화").join(", ")}</p>}
     </section>}
+    {campaign?.latest_turn?.dice?.roll != null && <p aria-label="최근 판정">주사위 {campaign.latest_turn.dice.roll} + {campaign.latest_turn.dice.bonus ?? 0} = {campaign.latest_turn.dice.total ?? campaign.latest_turn.dice.roll} · {campaign.latest_turn.dice.dc != null ? `DC ${campaign.latest_turn.dice.dc}` : "전투 판정"} · {campaign.latest_turn.dice.outcome}</p>}
     {campaign?.state.world_consequences && <p aria-label="세계 변화">통행세: {({ suspended: "징수 잠정 중단", contested: "공개 분쟁", unchanged: "변화 없음" } as Record<string, string>)[campaign.state.world_consequences.tax_collection]} · 피난민: {campaign.state.world_consequences.refugees === "evacuated" ? "피난 완료" : "도시 잔류"}</p>}
     <nav aria-label="가능한 행동">{campaign?.actions?.map(action => <button className="secondary" key={action} type="button" disabled={busy} onClick={() => void sendTurn(action)}>{action}</button>)}</nav>
     <label htmlFor="action">행동</label><textarea id="action" value={input} onChange={(event) => setInput(event.target.value)} disabled={!campaign || busy} />

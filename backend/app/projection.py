@@ -38,6 +38,12 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
     if "followup" in state:
         result["followup"] = pick(state["followup"], "id title status objective branch resolution")
         result["followup"]["evidence"] = strings(state["followup"].get("evidence", []))
+        result["followup"]["attempts"] = {
+            key: pick(value, "skill roll bonus dc success")
+            for key, value in state["followup"].get("attempts", {}).items()
+            if key in {"tax_ledger", "oren_testimony", "refugee_supplies", "safe_route"}
+        }
+        result["followup"]["complications"] = strings(state["followup"].get("complications", []))
     if "world_consequences" in state:
         result["world_consequences"] = pick(state["world_consequences"], "tax_collection refugees")
     if "combat" in state:

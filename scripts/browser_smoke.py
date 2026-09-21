@@ -160,9 +160,27 @@ def main() -> None:
                         if action != "봉인을 가지고 도시 떠나기":
                             click("시장으로 이동")
                         exile = action == "봉인을 가지고 도시 떠나기"
-                        click("오렌에게 안전한 피난로 확인" if exile else "오렌의 통행세 증언 기록")
+                        social = "오렌 설득해 피난로 확인" if exile else "오렌 설득해 증언 확보"
+                        click(social)
+                        expect(page.get_by_label("최근 판정")).to_be_visible()
+                        expect(page.get_by_role("button", name=social, exact=True)).to_have_count(0)
+                        safe_social = (
+                            "오렌에게 안전한 피난로 확인" if exile else "오렌의 통행세 증언 기록"
+                        )
+                        if page.get_by_role("button", name=safe_social, exact=True).count():
+                            click(safe_social)
                         click("창고로 이동")
-                        click("창고에서 피난 보급품 확보" if exile else "창고의 통행세 장부 확보")
+                        stealth = "몰래 피난 보급품 확보" if exile else "몰래 통행세 장부 복사"
+                        click(stealth)
+                        expect(page.get_by_label("최근 판정")).to_be_visible()
+                        expect(page.get_by_role("button", name=stealth, exact=True)).to_have_count(
+                            0
+                        )
+                        safe_stealth = (
+                            "창고에서 피난 보급품 확보" if exile else "창고의 통행세 장부 확보"
+                        )
+                        if page.get_by_role("button", name=safe_stealth, exact=True).count():
+                            click(safe_stealth)
                         click("시장으로 이동")
                         if action == "하를란에게 봉인 반환":
                             click("여관으로 이동")

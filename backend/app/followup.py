@@ -2,12 +2,18 @@
 
 from typing import Any
 
+from .dice import Roller
+
 COMMANDS = {
     "후속 사건 시작": ("start_followup", "aftermath"),
     "창고의 통행세 장부 확보": ("followup_evidence", "tax_ledger"),
     "오렌의 통행세 증언 기록": ("followup_evidence", "oren_testimony"),
     "창고에서 피난 보급품 확보": ("followup_evidence", "refugee_supplies"),
     "오렌에게 안전한 피난로 확인": ("followup_evidence", "safe_route"),
+    "몰래 통행세 장부 복사": ("followup_check", "tax_ledger"),
+    "오렌 설득해 증언 확보": ("followup_check", "oren_testimony"),
+    "몰래 피난 보급품 확보": ("followup_check", "refugee_supplies"),
+    "오렌 설득해 피난로 확인": ("followup_check", "safe_route"),
     "하를란에게 감사 증거 제출": ("resolve_followup", "law"),
     "시장에서 통행세 증거 공개": ("resolve_followup", "mercy"),
     "피난민과 함께 성문 통과": ("resolve_followup", "exile"),
@@ -84,9 +90,10 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     evidence = quest.get("evidence", [])
     actions = []
     for label, (intent, target) in COMMANDS.items():
-        if intent == "followup_evidence" and target in config["evidence"]:
+        if intent in {"followup_evidence", "followup_check"} and target in config["evidence"]:
             if target not in evidence and state.get("location_id") == EVIDENCE[target][0]:
-                actions.append(label)
+                if intent != "followup_check" or target not in quest.get("attempts", {}):
+                    actions.append(label)
         elif intent == "resolve_followup" and target == branch:
             if (
                 set(config["evidence"]) <= set(evidence)
@@ -96,8 +103,57 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     return actions
 
 
+def evidence_minutes(state: dict[str, Any], target: str) -> int:
+    attempt = state.get("followup", {}).get("attempts", {}).get(target)
+    return 25 if attempt and not attempt["success"] else 15
+
+
+def check(state: dict[str, Any], target: str, roller: Roller) -> tuple[str, int, dict]:
+    """빠르지만 실패 가능한 경로. 검사 후에만 주사위를 한 번 굴린다."""
+    if ("followup_check", target) not in {COMMANDS[label] for label in available_actions(state)}:
+        raise ValueError("이미 시도했거나 현재 선택할 수 없는 판정입니다.")
+    social = EVIDENCE[target][0] == "market"
+    skill = "persuasion" if social else "stealth"
+    bonus = int(state["player"].get(f"{skill}_bonus", 3 if social else 5))
+    roll = roller.roll(20)
+    success = roll + bonus >= 14
+    attempt = {"skill": skill, "roll": roll, "bonus": bonus, "dc": 14, "success": success}
+    quest = state["followup"]
+    quest.setdefault("attempts", {})[target] = attempt
+    if success:
+        quest["evidence"].append(target)
+        narrative = ("설득에 성공했다. " if social else "눈에 띄지 않고 접근했다. ") + EVIDENCE[
+            target
+        ][2]
+    else:
+        complication = "oren_reluctant" if social else "warehouse_alerted"
+        quest.setdefault("complications", []).append(complication)
+        narrative = (
+            "Oren이 경계하며 대화를 멈췄다. "
+            if social
+            else "발소리를 들킨 뒤 창고 경계가 강화됐다. "
+        ) + "같은 시도는 반복할 수 없다. 정식 절차로 25분을 들이면 필요한 것을 확보할 수 있다."
+        if social:
+            state["npc_relationships"]["npc_oren"] = "wary"
+            for npc in state["npcs"]:
+                if npc["id"] == "npc_oren":
+                    npc["disposition"] = "wary"
+    if social:
+        state["npc_knowledge"]["npc_oren"]["facts"][f"persuasion_{target}"] = {
+            "text": "플레이어가 도움을 설득했고 나는 협조했다."
+            if success
+            else "플레이어의 설득을 거절했다.",
+            "source": "witnessed_event",
+            "certainty": "known",
+            "shareable": True,
+        }
+    return narrative, 2 if success else 5, attempt
+
+
 def apply(state: dict[str, Any], intent: str, targets: tuple[str, ...]) -> str:
     """호출자가 복제한 상태만 변경하며 허용된 명령을 다시 검증한다."""
+    if intent == "followup_check":
+        raise ValueError("판정 행동은 주사위 검증 경로로 처리해야 합니다.")
     allowed = {COMMANDS[label] for label in available_actions(state)}
     if len(targets) != 1 or (intent, targets[0]) not in allowed:
         raise ValueError("현재 후속 사건에서 실행할 수 없는 행동입니다.")
@@ -112,6 +168,8 @@ def apply(state: dict[str, Any], intent: str, targets: tuple[str, ...]) -> str:
             "status": "active",
             "evidence": [],
             "resolution": None,
+            "attempts": {},
+            "complications": [],
         }
         state["encounter_enemy_id"] = None
         return config["opening"]
