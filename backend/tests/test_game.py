@@ -24,6 +24,15 @@ def state():
         "nearby_object_ids": ["door_inn"],
         "encounter_enemy_id": "goblin_001",
         "hidden": True,
+        "combat": {
+            "active": True,
+            "enemy_hp": 7,
+            "enemy_ac": 12,
+            "player_x": 1,
+            "player_y": 2,
+            "enemy_x": 2,
+            "enemy_y": 2,
+        },
         "player": {"hp": 31, "ac": 17, "stealth_bonus": 5, "attack_bonus": 5},
     }
 
@@ -44,7 +53,7 @@ def test_miss_and_enemy_critical_are_recorded_without_mutating_input(state):
 
 
 def test_player_critical_ignores_ac_and_victory_stops_retaliation(state):
-    state["combat"] = {"enemy_hp": 7, "enemy_ac": 99, "active": True}
+    state["combat"]["enemy_ac"] = 99
     rolls = Rolls(20, 4, 4)
     result = resolve_action(state, ATTACK, roller=rolls)
     assert result.state["combat"]["result"] == "victory"
@@ -67,6 +76,7 @@ def test_defeat_prevents_subsequent_actions(state):
 
 @pytest.mark.parametrize("roll,bonus,success", [(1, 20, True), (20, -10, False), (3, 5, False)])
 def test_skill_uses_total_not_attack_critical_rules(state, roll, bonus, success):
+    state.pop("combat")
     state["player"]["stealth_bonus"] = bonus
     result = resolve_action(state, HIDE, roller=Rolls(roll))
     assert result.state["hidden"] is success
@@ -83,9 +93,8 @@ def test_invalid_targets_consume_no_dice(state, intent, target):
 
 def test_won_encounter_cannot_be_attacked_again(state):
     result = resolve_action(state, ATTACK, roller=Rolls(20, 4, 4))
-    repeated = resolve_action(result.state, ATTACK, roller=Rolls())
-    assert repeated.state == result.state
-    assert repeated.event_type == "COMBAT_ALREADY_WON"
+    with pytest.raises(ValueError):
+        resolve_action(result.state, ATTACK, roller=Rolls())
 
 
 def test_attack_natural_one_misses_even_with_large_bonus(state):

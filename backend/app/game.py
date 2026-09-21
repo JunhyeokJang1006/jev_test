@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from . import tactical
 from .dice import Dice, Roller
 from .memory import record_episode
 from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
@@ -59,6 +60,24 @@ def resolve_action(
             or (proposal.intent, proposal.target_ids[0]) not in allowed
         ):
             raise ValueError("이전 사건은 끝났습니다. 현재 후속 사건의 행동을 선택해 주세요.")
+    if proposal.intent in {command[0] for command in tactical.COMMANDS.values()}:
+        outcome = tactical.resolve(state, proposal.intent, proposal.target_ids, roller=roller)
+        result = outcome["state"]
+        previous = int(state.get("combat", {}).get("elapsed_seconds", 0))
+        elapsed = max(0, int(result.get("combat", {}).get("elapsed_seconds", 0)) - previous)
+        before = int(state.get("combat_seconds", 0))
+        result["combat_seconds"] = before + elapsed
+        advance_time(result, (before + elapsed) // 60 - before // 60)
+        result.setdefault("journal", []).append(
+            {
+                "action": proposal.intent,
+                "target": "combat",
+                "text": outcome["narrative"],
+                "day": result["day"],
+                "time": result["time"],
+            }
+        )
+        return TurnOutcome(**outcome)
     if proposal.intent == "deceive_mayor":
         if proposal.target_ids != ("npc_harlan",) or not any(
             npc.get("id") == "npc_harlan" for npc in state.get("npcs", [])
@@ -134,125 +153,6 @@ def resolve_action(
     world_outcome = resolve_world(state, proposal.intent, proposal.target_ids, roller=roller)
     if world_outcome is not None:
         return TurnOutcome(**world_outcome)
-    if proposal.intent == "basic_attack":
-        if proposal.target_ids != ("goblin_001",):
-            raise ValueError("공격 대상이 현재 조우와 일치하지 않습니다.")
-        if (
-            state.get("location_id") != "greyhaven_inn"
-            or state.get("encounter_enemy_id") != "goblin_001"
-        ):
-            return TurnOutcome(
-                "COMBAT_NOT_AVAILABLE",
-                {"target_id": "goblin_001"},
-                next_state,
-                "이곳에는 공격할 적이 보이지 않는다.",
-                {"outcome": "no_state_change"},
-            )
-        combat = dict(
-            state.get("combat")
-            or {
-                "active": True,
-                "enemy_id": "goblin_001",
-                "enemy_name": "Goblin",
-                "enemy_hp": 7,
-                "enemy_ac": 12,
-            }
-        )
-        if combat.get("enemy_hp", 0) <= 0:
-            return TurnOutcome(
-                "COMBAT_ALREADY_WON",
-                {"enemy_id": "goblin_001"},
-                next_state,
-                "고블린은 이미 쓰러져 있다.",
-                {"outcome": "no_state_change"},
-            )
-        roll = roller.roll(20)
-        bonus = int(state["player"].get("attack_bonus", 5))
-        ac = int(combat.get("enemy_ac", 12))
-        hit = roll == 20 or (roll != 1 and roll + bonus >= ac)
-        critical = roll == 20
-        damage_rolls = [roller.roll(8) for _ in range(2 if critical else 1)] if hit else []
-        damage = (
-            max(0, sum(damage_rolls) + int(state["player"].get("damage_bonus", 3))) if hit else 0
-        )
-        enemy_hp = max(0, int(combat.get("enemy_hp", 0)) - (damage if hit else 0))
-        combat["enemy_hp"] = enemy_hp
-        combat["active"] = enemy_hp > 0
-        combat["round"] = int(combat.get("round", 0)) + 1
-        enemy_attack = None
-        player = dict(state["player"])
-        if enemy_hp > 0:
-            enemy_roll = roller.roll(20)
-            enemy_hit = enemy_roll == 20 or (
-                enemy_roll != 1 and enemy_roll + 4 >= int(player.get("ac", 17))
-            )
-            enemy_damage_rolls = (
-                [roller.roll(6) for _ in range(2 if enemy_roll == 20 else 1)] if enemy_hit else []
-            )
-            enemy_damage = sum(enemy_damage_rolls) + 2 if enemy_hit else 0
-            player["hp"] = max(0, int(player["hp"]) - enemy_damage)
-            enemy_attack = {
-                "roll": enemy_roll,
-                "bonus": 4,
-                "ac": int(player.get("ac", 17)),
-                "hit": enemy_hit,
-                "critical": enemy_roll == 20,
-                "damage_rolls": enemy_damage_rolls,
-                "damage_bonus": 2,
-                "damage": enemy_damage,
-                "remaining_hp": player["hp"],
-            }
-        if player["hp"] == 0:
-            combat["active"] = False
-            combat["result"] = "defeat"
-        elif enemy_hp == 0:
-            combat["result"] = "victory"
-        else:
-            combat["result"] = "ongoing"
-        next_state["player"] = player
-        next_state["hidden"] = False
-        next_state["combat"] = combat
-        narrative = (
-            f"공격이 명중해 고블린에게 {damage} 피해를 입혔다." if hit else "공격이 빗나갔다."
-        )
-        if enemy_attack:
-            narrative += (
-                f" 고블린의 반격으로 {enemy_attack['damage']} 피해를 입었다."
-                if enemy_attack["hit"]
-                else " 고블린의 반격은 빗나갔다."
-            )
-        if combat["result"] == "victory":
-            narrative += " 고블린이 쓰러졌다. 전투에서 승리했다."
-        elif combat["result"] == "defeat":
-            narrative += " 쓰러져 더 이상 싸울 수 없다. 저장을 복원할 수 있다."
-        return TurnOutcome(
-            "PLAYER_ATTACKED",
-            {
-                "target_id": "goblin_001",
-                "roll": roll,
-                "bonus": bonus,
-                "ac": ac,
-                "damage": damage if hit else 0,
-                "hit": hit,
-                "remaining_hp": enemy_hp,
-                "critical": critical,
-                "damage_rolls": damage_rolls,
-                "damage_bonus": int(state["player"].get("damage_bonus", 3)),
-                "enemy_attack": enemy_attack,
-                "rule_id": "greyhaven-combat-v2",
-                "result": combat["result"],
-            },
-            next_state,
-            narrative,
-            {
-                "roll": roll,
-                "bonus": bonus,
-                "total": roll + bonus,
-                "ac": ac,
-                "damage": damage if hit else 0,
-                "outcome": "hit" if hit else "miss",
-            },
-        )
     if proposal.intent != "hide_beside_door":
         return TurnOutcome(
             "PLAYER_ACTION_RECORDED",

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import PixelScene from "./pixel-scene";
+import Battlefield from "./battlefield";
 
 type Campaign = { id: string; name: string; state_version: number; state: Record<string, any>; latest_turn?: Turn | null; actions?: string[] };
 type Turn = { turn_id: string; state_version: number; narrative: string; dice: Record<string, any>; event: { type: string; payload: Record<string, any> }; state: Record<string, any> };
@@ -135,7 +136,7 @@ export default function CampaignPanel() {
 
   return <section className="campaign" aria-label="Greyhaven 캠페인">
     <div className="campaign-heading"><div><p className="eyebrow">{campaign?.state.location_name ?? "GREYHAVEN"}</p><h2>{campaign?.name ?? "캠페인 준비 중"}</h2></div><span>{campaign?.state.day ?? 1}일 · {campaign?.state.time ?? "21:36"}</span></div>
-    {campaign && <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} />}
+    {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={busy} onAction={action => void sendTurn(action)} />)}
     <p className="narrative">{narrative}</p>
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · Goblin HP {campaign.state.combat.enemy_hp}</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>

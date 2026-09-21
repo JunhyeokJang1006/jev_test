@@ -27,6 +27,7 @@ def scene_context(state: dict[str, Any]) -> dict[str, Any]:
         "known_clues": list(quest.get("clues", []))[:20],
         "inventory": list(state.get("inventory", []))[:30],
         "resources": state.get("resources"),
+        "combat": state.get("combat"),
         "quest_status": quest.get("status"),
         "followup": state.get("followup"),
         "world_consequences": state.get("world_consequences"),

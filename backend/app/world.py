@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from . import followup, resources
+from . import followup, resources, tactical
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -23,6 +23,7 @@ LOCATIONS = {
 COMMANDS = {
     **followup.COMMANDS,
     **resources.COMMANDS,
+    **tactical.COMMANDS,
     "하를란에게 시장이 보냈다고 거짓말": ("deceive_mayor", "npc_harlan"),
     "시장님이 직접 저를 보냈습니다.": ("deceive_mayor", "npc_harlan"),
     "여관으로 이동": ("travel", "greyhaven_inn"),
@@ -85,11 +86,11 @@ def available_actions(state: dict[str, Any]) -> list[str]:
                     actions.append(label)
         return actions
     if state.get("combat", {}).get("active"):
-        return ["고블린을 공격한다"]
+        return tactical.available_actions(state)
     location = LOCATIONS.get(state.get("location_id"))
     if location is None:
         return []
-    actions = ["주변 조사", *resources.available_actions(state)]
+    actions = ["주변 조사", *resources.available_actions(state), *tactical.available_actions(state)]
     for label, (intent, target) in COMMANDS.items():
         if intent == "travel" and target in location["exits"]:
             actions.append(label)

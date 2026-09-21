@@ -110,6 +110,17 @@ def main() -> None:
                             position={"x": box["width"] * x / 640, "y": box["height"] * y / 320}
                         )
 
+                    click("전투 시작")
+                    expect(page.get_by_test_id("battlefield")).to_be_visible()
+                    page.set_viewport_size({"width": 390, "height": 844})
+                    assert page.evaluate(
+                        "document.documentElement.scrollWidth <= window.innerWidth"
+                    )
+                    click("방어 태세")
+                    click("이동: (0, 2)")
+                    click("전투에서 후퇴")
+                    expect(page.get_by_test_id("battlefield")).to_have_count(0)
+                    page.set_viewport_size({"width": 1280, "height": 900})
                     click("여관에서 짧은 휴식")
                     click("여관에서 긴 휴식")
                     expect(page.get_by_text("Kael · HP 37/37", exact=True)).to_be_visible()

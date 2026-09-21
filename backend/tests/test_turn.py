@@ -93,12 +93,23 @@ def test_save_and_load_creates_a_new_campaign_branch():
 
 def test_basic_attack_uses_engine_result_and_reduces_enemy_hp():
     campaign = request("POST", "/api/campaign", json={}).json()
+    for version, action in enumerate(["전투 시작", "전투 이동: 오른쪽"]):
+        response = request(
+            "POST",
+            "/api/game/turn",
+            json={
+                "campaign_id": campaign["id"],
+                "expected_state_version": version,
+                "input": action,
+            },
+        )
+        assert response.status_code == 200
     response = request(
         "POST",
         "/api/game/turn",
         json={
             "campaign_id": campaign["id"],
-            "expected_state_version": 0,
+            "expected_state_version": 2,
             "input": "고블린을 공격한다",
         },
     )
@@ -124,10 +135,10 @@ def test_attack_retry_does_not_roll_again(monkeypatch):
     }
     first = request("POST", "/api/game/turn", json=payload)
     assert first.status_code == 200
-    assert rolls == [20, 8, 20]
+    assert rolls == [20, 20]
     second = request("POST", "/api/game/turn", json=payload)
     assert second.json() == first.json()
-    assert rolls == [20, 8, 20]
+    assert rolls == [20, 20]
 
 
 @pytest.mark.parametrize("text", ["미라를 공격한다", "여관 주인을 공격한다", "경비대장을 찌른다"])

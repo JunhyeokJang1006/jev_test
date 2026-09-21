@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 107 passed. 기존 검사와 회복 상한·자원 부족·사망/전투 차단·구매·자정 경계·구버전 자원·회복 멱등/분기 확인 |
+| API/AI 테스트 | PASS | pytest 135 passed. 전술 선제권·벽/사거리·방어/후퇴·승패·기존 보너스·저장·공개 context·시간 누적 확인 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -80,6 +80,13 @@ Chrome에서는 세 후속 경로에 실제 판정을 사용하고 실패 시 �
 회복·보급: 107개 전체 검사와 Chrome의 짧은/긴 휴식, 최대 HP 회복, 시장 구매 후 잔액/수량,
 세 후속 사건 완주가 통과했다. Astra가 관련 24개 검사와 후속 중 회복·전투/종결 차단·구매 상한을
 독립 확인했다. 누락된 개별 자원은 UI에서도 0으로 표시한다. 전투 중 회복·장비·성장은 아직 미구현이다.
+
+전술 전투: Astra writer가 격자 엔진과 단위 테스트 25개를 구현했고 루트가 공개 상태·AI context·
+전투 화면·세계 시간을 통합했다. 전체 135개 및 빌드 통과. Sol 독립 검사 56개에서
+허용 명령·벽/사거리·legacy 좌표 보완·저장 복원·공개 필드·시간 누적을 검증했다.
+Chrome에서 전투 시작→방어→격자 칸 클릭→출구 후퇴→휴식→기존 세 모험 경로를 완주했다.
+390px 모바일 폭에서 전투 격자 클릭과 폭 넘침 없음도 재검증했다.
+현재는 단일 적과 간소화된 행동-적 대응 규칙이며, 전체 SRD action economy·다중 적·엄폐는 미구현이다.
 
 첫 검사에서 ruff의 app 모듈 분류를 명시하도록 수정했다.
 TestClient 경로의 의존성 deprecation 경고는 httpx ASGITransport 기반 테스트로 변경하여 해소했다.
