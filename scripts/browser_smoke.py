@@ -263,6 +263,77 @@ def verify_defeat_recovery(browser) -> None:
     context.close()
 
 
+def verify_tactical_options(browser) -> None:
+    """Real server action budgets and conditional skill outcomes; no forced dice."""
+    for mode in ("dash", "shove", "feint"):
+        context = browser.new_context(viewport={"width": 390, "height": 844})
+        page = context.new_page()
+        page.goto("http://127.0.0.1:3000")
+        send = page.get_by_role("button", name="행동 보내기", exact=True)
+        expect(send).to_be_enabled()
+        campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+        campaign_url = f"http://127.0.0.1:8000/api/campaign/{campaign_id}"
+
+        def click(label, *, page=page, send=send):
+            page.get_by_role("button", name=label, exact=True).click()
+            expect(send).to_be_enabled()
+
+        def current(*, campaign_url=campaign_url):
+            return httpx.get(campaign_url).json()
+
+        click("전투 시작")
+        before = current()["state"]["combat"]["elapsed_seconds"]
+        if mode == "dash":
+            click("전력 질주")
+            expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 6칸")
+            expect(page.get_by_label("남은 전투 행동")).to_contain_text("주요 행동 사용 완료")
+            assert current()["state"]["combat"]["elapsed_seconds"] == before
+            page.reload()
+            expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 6칸")
+            expect(page.get_by_role("button", name="전력 질주", exact=True)).to_have_count(0)
+            click("전투 이동: 왼쪽")
+            click("전투에서 후퇴")
+        else:
+            for _ in range(2):
+                if "고블린을 공격한다" in current()["actions"]:
+                    break
+                click("전투 이동: 오른쪽")
+            label = "고블린 밀쳐 넘어뜨리기" if mode == "shove" else "고블린 교란하기"
+            click(label)
+            result = current()
+            success = result["latest_turn"]["event"]["payload"]["success"]
+            condition = "prone" if mode == "shove" else "exposed"
+            first = result["state"]["combat"]["enemies"][0]
+            assert (condition in first["conditions"]) == success
+            assert result["state"]["combat"]["elapsed_seconds"] == before
+            page.reload()
+            expect(send).to_be_enabled()
+            assert current() == result
+            if success:
+                expect(page.get_by_label("적 상태")).to_contain_text(
+                    "넘어짐" if mode == "shove" else "빈틈"
+                )
+            if mode == "shove":
+                expect(page.get_by_label("남은 전투 행동")).to_contain_text("주요 행동 사용 완료")
+                click("적 차례로 넘기기")
+                latest = current()["latest_turn"]
+                assert "prone" not in latest["state"]["combat"]["enemies"][0]["conditions"]
+                if success:
+                    assert latest["event"]["payload"]["enemy_attacks"][0]["stood_up"] is True
+            else:
+                expect(page.get_by_label("남은 전투 행동")).to_contain_text("보조 행동 사용 완료")
+                expect(
+                    page.get_by_role("button", name="전투 중 치유 물약", exact=True)
+                ).to_have_count(0)
+                click("고블린을 공격한다")
+                latest = current()["latest_turn"]
+                assert len(latest["event"]["payload"]["attack_rolls"]) == (2 if success else 1)
+                assert "exposed" not in latest["state"]["combat"]["enemies"][0]["conditions"]
+                if success:
+                    expect(page.get_by_label("최근 판정")).to_contain_text("중 높은 값 선택")
+        context.close()
+
+
 def wait_for(url: str, process: subprocess.Popen) -> None:
     deadline = time.monotonic() + 50
     while time.monotonic() < deadline:
@@ -364,7 +435,7 @@ def main() -> None:
                     click("전투 시작")
                     expect(page.get_by_test_id("battlefield")).to_be_visible()
                     expect(page.get_by_label("적 상태").locator("li")).to_have_count(2)
-                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 3/3")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 3칸")
                     click("전투 중 치유 물약")
                     expect(page.get_by_label("남은 전투 행동")).to_contain_text(
                         "보조 행동 사용 완료"
@@ -379,9 +450,9 @@ def main() -> None:
                         "주요 행동 사용 완료"
                     )
                     click("이동: (0, 2)")
-                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 2/3")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 2칸")
                     click("적 차례로 넘기기")
-                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 3/3")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 3칸")
                     expect(page.get_by_label("남은 전투 행동")).to_contain_text("주요 행동 1회")
                     click("전투에서 후퇴")
                     expect(page.get_by_test_id("battlefield")).to_have_count(0)
@@ -599,6 +670,7 @@ def main() -> None:
                         page.screenshot(path=os.environ["MAP_SCREENSHOT"], full_page=True)
                     assert not failures, failures
                     verify_defeat_recovery(browser)
+                    verify_tactical_options(browser)
                     browser.close()
                 print(
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
@@ -607,6 +679,7 @@ def main() -> None:
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "
                     "전투 패배·쓰러진 저장 복원·3종 치료 후 탐험 재개, "
+                    "질주·밀치기·교란의 예산/상태 표시·재접속 유지, "
                     "다중 탭·저장소 실패 차단, "
                     "서버 저장 선택·브라우저 저장 초기화 후 복원, 모바일 지도 클릭, JS 오류 없음"
                 )

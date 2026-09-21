@@ -86,7 +86,13 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
             and all(type(v) is int for v in point)
         ]
         result["combat"]["enemies"] = [
-            pick(enemy, "id name hp ac x y") for enemy in combat.get("enemies", [])
+            {
+                **pick(enemy, "id name hp ac x y"),
+                "conditions": [
+                    c for c in strings(enemy.get("conditions")) if c in {"prone", "exposed"}
+                ],
+            }
+            for enemy in combat.get("enemies", [])
         ]
     return result
 
@@ -97,8 +103,13 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "intent target_id enemy_id skill dc roll bonus success ac damage hit "
         "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending "
         "healing cost gold_spent supplies_spent reward_gold moved attacked "
-        "xp_gained level choice world_notice",
+        "xp_gained level choice world_notice stood_up",
     )
+    for field in ("condition", "condition_consumed"):
+        if payload.get(field) in ("prone", "exposed"):
+            result[field] = payload[field]
+    if "attack_rolls" in payload:
+        result["attack_rolls"] = [value for value in payload["attack_rolls"] if type(value) is int]
     if "damage_rolls" in payload:
         result["damage_rolls"] = [value for value in payload["damage_rolls"] if type(value) is int]
     if "healing_rolls" in payload:

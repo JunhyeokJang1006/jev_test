@@ -223,10 +223,18 @@ def multi_active(state, *, adjacent=False):
 def test_new_encounter_has_two_enemies_and_versioned_events(state):
     result = act(state, "start_combat", "goblin_001", 10, 10)
     assert result["state"]["combat"]["enemies"] == [
-        {"id": "goblin_001", "name": "Goblin", "hp": 7, "ac": 12, "x": 4, "y": 2},
-        {"id": "goblin_002", "name": "Goblin Scout", "hp": 7, "ac": 12, "x": 4, "y": 4},
+        {"id": "goblin_001", "name": "Goblin", "hp": 7, "ac": 12, "x": 4, "y": 2, "conditions": []},
+        {
+            "id": "goblin_002",
+            "name": "Goblin Scout",
+            "hp": 7,
+            "ac": 12,
+            "x": 4,
+            "y": 4,
+            "conditions": [],
+        },
     ]
-    assert result["event_payload"]["rule_id"] == "greyhaven-tactical-v3"
+    assert result["event_payload"]["rule_id"] == "greyhaven-tactical-v4"
     assert result["event_payload"]["enemy_attacks"] == []
 
 
@@ -348,7 +356,7 @@ def test_legacy_normalization_preserves_only_original_enemy_and_input(state):
     before = deepcopy(state)
     combat = normalized_combat(state)
     assert combat["enemies"] == [
-        {"id": "goblin_001", "name": "Goblin", "hp": 0, "ac": 15, "x": 4, "y": 2}
+        {"id": "goblin_001", "name": "Goblin", "hp": 0, "ac": 15, "x": 4, "y": 2, "conditions": []}
     ]
     assert not combat["active"]
     assert state == before

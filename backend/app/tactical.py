@@ -12,6 +12,11 @@ COMMANDS = {
     "전투 시작": ("start_combat", "goblin_001"),
     "고블린을 공격한다": ("basic_attack", "goblin_001"),
     "두 번째 고블린을 공격한다": ("basic_attack", "goblin_002"),
+    "고블린 밀쳐 넘어뜨리기": ("combat_shove", "goblin_001"),
+    "두 번째 고블린 밀쳐 넘어뜨리기": ("combat_shove", "goblin_002"),
+    "고블린 교란하기": ("combat_feint", "goblin_001"),
+    "두 번째 고블린 교란하기": ("combat_feint", "goblin_002"),
+    "전력 질주": ("combat_dash", "player"),
     "전투 이동: 위": ("combat_move", "up"),
     "전투 이동: 아래": ("combat_move", "down"),
     "전투 이동: 왼쪽": ("combat_move", "left"),
@@ -79,6 +84,8 @@ def _combat(state: dict) -> dict:
                 }
             )
     _sync_legacy(combat)
+    for enemy in combat["enemies"]:
+        enemy.setdefault("conditions", [])
     return combat
 
 
@@ -126,12 +133,14 @@ def available_actions(state: dict) -> list[str]:
     actions = [
         label
         for label, (intent, target) in COMMANDS.items()
-        if intent == "basic_attack"
-        and combat["action_available"]
+        if intent in {"basic_attack", "combat_shove", "combat_feint"}
+        and combat["bonus_action_available" if intent == "combat_feint" else "action_available"]
         and any(
             enemy["id"] == target
             and enemy["hp"] > 0
             and _distance(player, (enemy["x"], enemy["y"])) == 1
+            and (intent != "combat_shove" or "prone" not in enemy["conditions"])
+            and (intent != "combat_feint" or "exposed" not in enemy["conditions"])
             for enemy in combat["enemies"]
         )
     ]
@@ -143,7 +152,7 @@ def available_actions(state: dict) -> list[str]:
             if _walkable(point) and point not in occupied:
                 actions.append(label)
     if combat["action_available"]:
-        actions.append("방어 태세")
+        actions.extend(["방어 태세", "전력 질주"])
     resources = state.get("resources", DEFAULT_RESOURCES)
     if (
         combat["bonus_action_available"]
@@ -160,6 +169,16 @@ def available_actions(state: dict) -> list[str]:
 def _enemy_response(state: dict, actor: dict, roller: Roller, *, defend: bool = False) -> dict:
     combat = state["combat"]
     player, enemy = _position(combat, "player"), (actor["x"], actor["y"])
+    if "prone" in actor["conditions"]:
+        actor["conditions"].remove("prone")
+        return {
+            "enemy_id": actor["id"],
+            "stood_up": True,
+            "moved": False,
+            "attacked": False,
+            "from": list(enemy),
+            "to": list(enemy),
+        }
     occupied = _occupied(combat, excluding=actor["id"])
     origin = enemy
     if _distance(player, enemy) > 1:
@@ -217,6 +236,8 @@ def _enemy_response(state: dict, actor: dict, roller: Roller, *, defend: bool = 
 def _enemy_side_response(state: dict, roller: Roller, *, defend: bool = False) -> list[dict]:
     responses = []
     for actor in state["combat"]["enemies"]:
+        actor["conditions"] = [c for c in actor["conditions"] if c != "exposed"]
+    for actor in state["combat"]["enemies"]:
         if state["player"]["hp"] <= 0:
             break
         if actor["hp"] > 0:
@@ -247,7 +268,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
     payload: dict[str, Any] = {
         "intent": intent,
         "target_id": targets[0],
-        "rule_id": "greyhaven-tactical-v3",
+        "rule_id": "greyhaven-tactical-v4",
         "enemy_attack": None,
         "enemy_attacks": [],
     }
@@ -287,6 +308,29 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             narrative = "한 칸 이동했다."
         elif intent == "combat_defend":
             combat.update(action_available=False, defending=True)
+        elif intent == "combat_dash":
+            combat["action_available"] = False
+            combat["movement_remaining"] += 3
+            narrative = "전력 질주로 이번 턴의 남은 이동이 3칸 늘었다."
+        elif intent in {"combat_shove", "combat_feint"}:
+            condition = "prone" if intent == "combat_shove" else "exposed"
+            budget = "action_available" if intent == "combat_shove" else "bonus_action_available"
+            combat[budget] = False
+            enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == targets[0])
+            roll = roller.roll(20)
+            success = roll + 3 >= 14
+            if success:
+                enemy["conditions"].append(condition)
+            payload.update(roll=roll, bonus=3, dc=14, success=success, condition=condition)
+            dice = {
+                "roll": roll,
+                "bonus": 3,
+                "total": roll + 3,
+                "dc": 14,
+                "outcome": "success" if success else "failure",
+            }
+            effect = "넘어뜨렸다" if condition == "prone" else "교란해 빈틈을 만들었다"
+            narrative = f"{enemy['name']}을 {effect}." if success else "전술 행동에 실패했다."
         elif intent == "combat_potion":
             initialize_resources(result)
             result["resources"]["healing_potions"] -= 1
@@ -318,7 +362,12 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
         elif intent == "basic_attack":
             combat["action_available"] = False
             enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == targets[0])
-            roll = roller.roll(20)
+            exposed = "exposed" in enemy["conditions"]
+            attack_rolls = [roller.roll(20) for _ in range(2 if exposed else 1)]
+            roll = max(attack_rolls)
+            if exposed:
+                enemy["conditions"].remove("exposed")
+                payload["condition_consumed"] = "exposed"
             ac = int(enemy["ac"])
             bonus = int(result["player"].get("attack_bonus", 5))
             damage_bonus = int(result["player"].get("damage_bonus", 3))
@@ -330,6 +379,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
                 combat.update(active=False, result="victory")
             payload.update(
                 roll=roll,
+                attack_rolls=attack_rolls,
                 bonus=bonus,
                 ac=ac,
                 hit=hit,
@@ -353,6 +403,9 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             )
         if intent == "combat_end_turn" or combat["result"] in {"victory", "fled"}:
             combat["elapsed_seconds"] += 6
+    if not combat["active"]:
+        for enemy in combat["enemies"]:
+            enemy["conditions"] = []
     _sync_legacy(combat)
     responses = payload["enemy_attacks"]
     payload["enemy_attack"] = responses[0] if responses else None
@@ -362,6 +415,8 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
         )
         if response.get("attacked"):
             narrative += f" {enemy_name}의 공격으로 {response['damage']} 피해를 입었다."
+        elif response.get("stood_up"):
+            narrative += f" {enemy_name}이 일어나는 데 턴을 사용했다."
         elif response["moved"]:
             narrative += f" {enemy_name}이 한 칸 접근했다."
     if combat["result"] == "victory":
