@@ -28,6 +28,7 @@ CATALOG = {
         _item("travel_blade", "여행검", "weapon", 0),
         _item("heavy_blade", "중검", "weapon", 16, attack_delta=-1, damage_delta=1, damage_die=10),
         _item("duelist_blade", "결투검", "weapon", 12, attack_delta=1, damage_die=6),
+        _item("shortbow", "단궁", "ranged", 10, damage_die=6),
         _item("travel_armor", "여행 갑옷", "armor", 0),
         _item("reinforced_armor", "강화 갑옷", "armor", 18, ac_delta=2, stealth_delta=-2),
         _item("scout_armor", "정찰 갑옷", "armor", 14, ac_delta=-1, stealth_delta=2),
@@ -61,7 +62,7 @@ def gear(state: dict) -> dict:
         "equipped": {
             slot: item
             for slot, item in equipped.items()
-            if slot in {"weapon", "armor"}
+            if slot in {"weapon", "armor", "ranged"}
             and isinstance(item, str)
             and item in owned
             and CATALOG[item]["slot"] == slot
@@ -91,6 +92,8 @@ def effective_stats(state: dict) -> dict:
     }
     stats["damage_die"] = 8
     for slot, key in gear(state)["equipped"].items():
+        if slot == "ranged":
+            continue
         item = CATALOG[key]
         for stat, delta in (
             ("ac", "ac_delta"),

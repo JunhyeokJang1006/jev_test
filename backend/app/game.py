@@ -40,6 +40,10 @@ def noncommitting_input(text: str, intent: str | None = None) -> bool:
     """
     # A rejected action in a mixed clause must not override its positive alternative.
     unquoted = re.sub(r"'[^']*'|\"[^\"]*\"|‘[^’]*’|“[^”]*”", "", text)
+    if intent == "combat_ranged_attack" and re.search(
+        r"안\s*(?:쏜|쏘|사격)|(?:쏘|사격하)지\s*(?:않|말|마)", unquoted
+    ):
+        return True
     if intent == "combat_second_wind" and re.search(
         r"회복력(?:을|은|도)?\s*(?:안\s*(?:쓴|쓰|사용)|사용하지\s*(?:않|말|마))", unquoted
     ):

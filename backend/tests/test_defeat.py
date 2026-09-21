@@ -65,6 +65,7 @@ def test_actual_defeat_recovery_preserves_progress_and_spends(
     assert state["elapsed_minutes"] == before["elapsed_minutes"] + minutes
     assert state["resources"] == {
         "gold": 20 - gold,
+        "arrows": 0,
         "camp_supplies": 2 - supplies,
         "hit_dice": 0,
         "healing_potions": 0,
@@ -88,7 +89,7 @@ def test_legacy_zero_resources_can_wait_and_small_hp_is_capped(fallen):
     assert available_actions(fallen) == ["도움을 기다리기 (8시간)"]
     result = resolve_action(fallen, interpret_mock("도움을 기다리기 (8시간)"), roller=Rolls())
     assert result.state["player"]["hp"] == 1
-    assert result.state["resources"] == fallen["resources"]
+    assert result.state["resources"] == fallen["resources"] | {"arrows": 0}
 
 
 @pytest.mark.parametrize(

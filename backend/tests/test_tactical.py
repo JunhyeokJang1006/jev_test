@@ -437,7 +437,7 @@ def test_move_attack_move_potion_preserves_independent_budgets_and_no_response(s
     assert state["combat"]["elapsed_seconds"] == 0
     assert state["combat"]["enemy_x"] == 3
     assert state["player"]["hp"] == 29
-    assert state["resources"] == {"healing_potions": 1}
+    assert state["resources"] == {"healing_potions": 1, "arrows": 0}
     assert result["event_payload"]["healing_rolls"] == [3, 4]
     assert result["event_payload"]["healing"] == 9
     assert "전투 중 치유 물약" not in available_actions(state)

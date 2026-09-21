@@ -6,8 +6,9 @@ from . import abilities
 from .dice import Roller
 from .world_effects import prices
 
-DEFAULT = {"gold": 20, "healing_potions": 2, "camp_supplies": 2, "hit_dice": 2}
+DEFAULT = {"gold": 20, "healing_potions": 2, "camp_supplies": 2, "hit_dice": 2, "arrows": 0}
 COMMANDS = {
+    "화살 10개 구매 (2골드)": ("buy_arrows", "arrows"),
     "치유 물약 사용": ("recover", "potion"),
     "여관에서 짧은 휴식": ("recover", "short_rest"),
     "여관에서 긴 휴식": ("recover", "long_rest"),
@@ -22,9 +23,40 @@ COMMANDS = {
 }
 
 
+def arrows(state: dict) -> int:
+    """누락·손상된 수량은 보급으로 인정하지 않는다. bool도 수량이 아니다."""
+    resources = state.get("resources", {})
+    value = resources.get("arrows", 0) if isinstance(resources, dict) else 0
+    return value if type(value) is int and 0 <= value <= 30 else 0
+
+
+def can_buy_arrows(state: dict) -> bool:
+    for field in ("player", "resources", "combat", "quest", "followup"):
+        if field in state and not isinstance(state[field], dict):
+            return False
+    hp = state.get("player", {}).get("hp", 0)
+    stock = state.get("resources", DEFAULT)
+    gold, count = stock.get("gold", 0), stock.get("arrows", 0)
+    return (
+        type(hp) is int
+        and hp > 0
+        and type(gold) is int
+        and gold >= 2
+        and type(count) is int
+        and 0 <= count <= 20
+        and state.get("location_id") == "market"
+        and not state.get("combat", {}).get("active")
+        and (
+            not state.get("quest", {}).get("ending")
+            or state.get("followup", {}).get("status") in ("active", "completed")
+        )
+    )
+
+
 def initialize(state: dict[str, Any]) -> None:
     # 구버전 상태에만 초기 자원을 부여한다. 0인 자원을 다시 채우지 않는다.
     state.setdefault("resources", dict(DEFAULT))
+    state["resources"].setdefault("arrows", 0)
 
 
 def available_actions(state: dict[str, Any]) -> list[str]:
@@ -39,6 +71,8 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     resources = state.get("resources", DEFAULT)
     injured = player.get("hp", 0) < player.get("max_hp", 37)
     actions = []
+    if can_buy_arrows(state):
+        actions.append("화살 10개 구매 (2골드)")
     if injured and resources.get("healing_potions", 0) > 0:
         actions.append("치유 물약 사용")
     if state.get("location_id") == "greyhaven_inn":
@@ -58,6 +92,8 @@ def available_actions(state: dict[str, Any]) -> list[str]:
 
 
 def apply(state: dict[str, Any], intent: str, target: str, roller: Roller) -> dict:
+    if intent == "buy_arrows" and (target != "arrows" or not can_buy_arrows(state)):
+        raise ValueError("현재 위치·체력·자원으로는 화살을 구매할 수 없습니다.")
     if (intent, target) not in {COMMANDS[label] for label in available_actions(state)}:
         raise ValueError("현재 위치·체력·자원으로는 이 행동을 할 수 없습니다.")
     initialize(state)
@@ -67,7 +103,12 @@ def apply(state: dict[str, Any], intent: str, target: str, roller: Roller) -> di
     rolls = []
     minutes = 1
     cost = 0
-    if intent == "buy_resource":
+    if intent == "buy_arrows":
+        cost = 2
+        resources["gold"] -= cost
+        resources["arrows"] += 10
+        narrative = "2골드를 지불하고 화살 10개를 샀다."
+    elif intent == "buy_resource":
         target, quoted_price = target.split(":")
         cost = int(quoted_price)
         resources["gold"] -= cost
@@ -111,6 +152,8 @@ def apply(state: dict[str, Any], intent: str, target: str, roller: Roller) -> di
             "healing": healed,
             "healing_rolls": rolls,
             "cost": cost,
-            "rule_id": "greyhaven-recovery-v2",
+            "rule_id": (
+                "greyhaven-arrows-custom-v1" if intent == "buy_arrows" else "greyhaven-recovery-v2"
+            ),
         },
     }

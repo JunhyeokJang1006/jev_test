@@ -232,7 +232,7 @@ export default function CampaignPanel() {
 
   return <section className="campaign" aria-label="Greyhaven 캠페인">
     <div className="campaign-heading"><div><p className="eyebrow">{campaign?.state.location_name ?? "GREYHAVEN"}</p><h2>{campaign?.name ?? "캠페인 준비 중"}</h2></div><span>{campaign?.state.day ?? 1}일 · {campaign?.state.time ?? "21:36"}</span></div>
-    {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} stats={campaign.state.effective_stats} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} />)}
+    {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} stats={campaign.state.effective_stats} ranged={campaign.state.ranged_stats} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} />)}
     <p className="narrative">{narrative}</p>
     {["pending", "failed"].includes(campaign?.latest_turn?.narrative_status ?? "") && <section aria-label="서사 복구">
       <p className="note">판정은 저장되었습니다. {campaign?.latest_turn?.narrative_status === "failed" ? "AI 서사를 만들지 못해 판정 원문을 표시합니다." : "서사는 아직 완료되지 않았습니다."} 복구해도 주사위·보상·시간은 다시 처리하지 않습니다.</p>
@@ -260,7 +260,7 @@ export default function CampaignPanel() {
       <p>설득·잠입은 각각 한 번만 시도할 수 있습니다. 실패해도 안전한 작업으로 진행할 수 있습니다. 동시 구출에는 두 단서와 로프, 최종 작업 5분이 필요합니다.</p>
     </section>}
     {campaign && <WorldEvents events={campaign.state.world_events ?? []} factions={campaign.state.factions ?? {}} elapsed={campaign.state.elapsed_minutes ?? 0} marketPolicy={campaign.state.market_policy} />}
-    {campaign && <EquipmentPanel equipment={campaign.state.equipment} stats={campaign.state.effective_stats} />}
+    {campaign && <EquipmentPanel equipment={campaign.state.equipment} stats={campaign.state.effective_stats} ranged={campaign.state.ranged_stats} />}
     {campaign?.state.progression && <section aria-label="캐릭터 성장">
       <p>레벨 {campaign.state.progression.level} · 경험치 {campaign.state.progression.xp} / {campaign.state.progression.next_level_xp ?? "현재 성장 상한"}</p>
       <p>기본 능력(성장 포함): 공격 +{campaign.state.player.attack_bonus ?? 5} · 은신 +{campaign.state.player.stealth_bonus ?? 5} · 설득 +{campaign.state.player.persuasion_bonus ?? 3}</p>

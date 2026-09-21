@@ -7,10 +7,15 @@ from typing import Any
 from . import abilities
 from .dice import Roller
 from .equipment import effective_stats
+from .ranged import clear_line, ranged_stats
 from .resources import DEFAULT as DEFAULT_RESOURCES
 from .resources import initialize as initialize_resources
 
 COMMANDS = {
+    "고블린에게 사격": ("combat_ranged_attack", "goblin_001"),
+    "두 번째 고블린에게 사격": ("combat_ranged_attack", "goblin_002"),
+    "매복자에게 사격": ("combat_ranged_attack", "bandit_001"),
+    "두 번째 매복자에게 사격": ("combat_ranged_attack", "bandit_002"),
     "망루 매복자와 전투": ("start_combat", "bandit_001"),
     "매복자를 공격한다": ("basic_attack", "bandit_001"),
     "두 번째 매복자를 공격한다": ("basic_attack", "bandit_002"),
@@ -106,6 +111,7 @@ def _combat(state: dict) -> dict:
     }
     for key, value in defaults.items():
         combat.setdefault(key, value)
+    combat["walls"] = [list(point) for point in sorted(WALLS)]
     if "enemies" not in combat:
         combat["enemies"] = [
             {key: combat[f"enemy_{key}"] for key in ("id", "name", "hp", "ac", "x", "y")}
@@ -190,6 +196,27 @@ def available_actions(state: dict) -> list[str]:
         )
     ]
     occupied = _occupied(combat)
+    bow = ranged_stats(state)
+    if (
+        combat["action_available"]
+        and bow["equipped"]
+        and bow["ammunition"] > 0
+        and not any(_distance(player, point) == 1 for point in occupied)
+    ):
+        actions.extend(
+            label
+            for label, (intent, target) in COMMANDS.items()
+            if intent == "combat_ranged_attack"
+            and any(
+                enemy["id"] == target
+                and enemy["hp"] > 0
+                and bow["minimum_range"]
+                <= _distance(player, (enemy["x"], enemy["y"]))
+                <= bow["maximum_range"]
+                and clear_line(player, (enemy["x"], enemy["y"]), WALLS)
+                for enemy in combat["enemies"]
+            )
+        )
     for label, (intent, direction) in COMMANDS.items():
         if intent == "combat_move" and combat["movement_remaining"] > 0:
             dx, dy = DIRECTIONS[direction]
@@ -448,7 +475,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             combat.update(active=False, result="fled")
             result["encounter_enemy_id"] = None
             narrative = "출구로 후퇴했다. 이번 조우의 재진입은 지원하지 않는다."
-        elif intent == "basic_attack":
+        elif intent in {"basic_attack", "combat_ranged_attack"}:
             combat["action_available"] = False
             enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == targets[0])
             exposed = "exposed" in enemy["conditions"]
@@ -458,7 +485,20 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
                 enemy["conditions"].remove("exposed")
                 payload["condition_consumed"] = "exposed"
             ac = int(enemy["ac"])
-            stats = effective_stats(result)
+            if intent == "combat_ranged_attack":
+                stats = ranged_stats(result)
+                initialize_resources(result)
+                result["resources"]["arrows"] -= 1
+                payload.update(
+                    rule_id="greyhaven-ranged-custom-v1",
+                    distance=_distance(_position(combat, "player"), (enemy["x"], enemy["y"])),
+                    minimum_range=stats["minimum_range"],
+                    maximum_range=stats["maximum_range"],
+                    ammunition_spent=1,
+                    ammunition_remaining=result["resources"]["arrows"],
+                )
+            else:
+                stats = effective_stats(result)
             bonus = stats["attack_bonus"]
             damage_bonus = stats["damage_bonus"]
             hit = roll == 20 or (roll != 1 and roll + bonus >= ac)

@@ -75,7 +75,7 @@ def test_buying_checks_gold_cap_location_and_partial_resources():
     original["location_id"] = "market"
     original["resources"] = {"gold": 8}
     outcome = resolve_action(original, action, roller=Rolls())
-    assert outcome.state["resources"] == {"gold": 0, "healing_potions": 1}
+    assert outcome.state["resources"] == {"gold": 0, "healing_potions": 1, "arrows": 0}
     with pytest.raises(ValueError):
         resolve_action(outcome.state, action, roller=Rolls())
     original["resources"] = {"gold": 100, "healing_potions": 5}
