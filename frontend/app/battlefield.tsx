@@ -1,7 +1,7 @@
 "use client";
 
 type Enemy = { id: string; name: string; hp: number; x: number; y: number };
-type Combat = { enemies?: Enemy[]; width?: number; height?: number; player_x: number; player_y: number; enemy_x: number; enemy_y: number; enemy_hp: number; exit_x: number; exit_y: number; round: number; walls?: number[][]; initiative?: { first?: string; player_roll?: number; enemy_roll?: number } };
+type Combat = { enemies?: Enemy[]; width?: number; height?: number; player_x: number; player_y: number; enemy_x: number; enemy_y: number; enemy_hp: number; exit_x: number; exit_y: number; round: number; movement_remaining?: number; action_available?: boolean; bonus_action_available?: boolean; defending?: boolean; walls?: number[][]; initiative?: { first?: string; player_roll?: number; enemy_roll?: number } };
 
 export default function Battlefield({ combat, actions, busy, onAction }: { combat: Combat; actions: string[]; busy: boolean; onAction: (action: string) => void }) {
   const directions: Record<string, string> = { "0,-1": "전투 이동: 위", "0,1": "전투 이동: 아래", "-1,0": "전투 이동: 왼쪽", "1,0": "전투 이동: 오른쪽" };
@@ -12,7 +12,9 @@ export default function Battlefield({ combat, actions, busy, onAction }: { comba
     <h3>여관 전투 · {combat.round}라운드</h3>
     <p>진영 선제권: {combat.initiative?.first === "enemy" ? "적 진영" : "Kael"}</p>
     <ul aria-label="적 상태">{enemies.map(enemy => <li key={enemy.id}>{enemy.name}: HP {enemy.hp}{enemy.hp <= 0 ? " · 쓰러짐" : ""}</li>)}</ul>
-    <p>한 칸 이동 또는 행동 후 살아 있는 적들이 차례로 대응합니다. 인접한 적을 클릭해 공격하고, 출구에서 후퇴할 수 있습니다. 방어는 이번 적 대응 전체에 AC +2입니다.</p>
+    <p aria-label="남은 전투 행동">이동 {combat.movement_remaining ?? 3}/3 · 주요 행동 {combat.action_available === false ? "사용 완료" : "1회"} · 보조 행동 {combat.bonus_action_available === false ? "사용 완료" : "1회"}{combat.defending ? " · 방어 중 AC +2" : ""}</p>
+    <p>한 턴에 이동 3칸, 공격 또는 방어 1회, 물약 1회를 순서를 정해 사용할 수 있습니다. 인접한 적을 눌러 공격하세요. 턴을 종료하면 살아 있는 적들이 차례로 대응합니다. 방어는 이 적 대응 전체에 AC +2이며, 출구에서 후퇴할 수 있습니다.</p>
+    <button type="button" disabled={busy || !actions.includes("턴 종료")} onClick={() => onAction("턴 종료")}>적 차례로 넘기기</button>
     <div style={{ display: "grid", gridTemplateColumns: `repeat(${width}, minmax(0, 1fr))`, gap: 4 }}>
       {Array.from({ length: width * height }, (_, index) => {
         const x = index % width, y = Math.floor(index / width);

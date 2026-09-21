@@ -135,7 +135,7 @@ def test_save_and_load_creates_a_new_campaign_branch():
 
 def test_basic_attack_uses_engine_result_and_reduces_enemy_hp():
     campaign = request("POST", "/api/campaign", json={}).json()
-    for version, action in enumerate(["전투 시작", "전투 이동: 오른쪽"]):
+    for version, action in enumerate(["전투 시작", "전투 이동: 오른쪽", "전투 이동: 오른쪽"]):
         response = request(
             "POST",
             "/api/game/turn",
@@ -151,7 +151,7 @@ def test_basic_attack_uses_engine_result_and_reduces_enemy_hp():
         "/api/game/turn",
         json={
             "campaign_id": campaign["id"],
-            "expected_state_version": 2,
+            "expected_state_version": 3,
             "input": "고블린을 공격한다",
         },
     )

@@ -47,7 +47,8 @@ def test_legacy_combat_projection_does_not_restart_initiative():
     outcome = resolve_action(state, interpret_mock("전투 이동: 왼쪽"), roller=Rolls())
     assert outcome.state["combat"]["enemy_hp"] == 3
     assert outcome.state["combat"]["player_x"] == 0
-    assert outcome.state["combat_seconds"] == 6
+    assert outcome.state["combat_seconds"] == 0
+    assert outcome.state["combat"]["movement_remaining"] == 2
 
 
 def test_combat_seconds_accumulate_into_world_clock():
@@ -60,6 +61,8 @@ def test_combat_seconds_accumulate_into_world_clock():
         "combat": {"active": True, "enemy_hp": 3, "elapsed_seconds": 54},
     }
     outcome = resolve_action(state, interpret_mock("전투 이동: 왼쪽"), roller=Rolls())
+    assert outcome.state["combat_seconds"] == 54
+    outcome = resolve_action(outcome.state, interpret_mock("턴 종료"), roller=Rolls())
     assert outcome.state["combat_seconds"] == 60
     assert outcome.state["elapsed_minutes"] == 1
     assert outcome.state["time"] == "21:37"

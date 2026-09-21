@@ -29,6 +29,9 @@ def test_second_enemy_target_persists_and_does_not_hit_first(monkeypatch):
     assert campaign["state"]["combat"]["enemies"][0]["hp"] == 7
     assert campaign["state"]["combat"]["enemies"][1]["hp"] == 1
     assert campaign["event"]["payload"]["target_id"] == "goblin_002"
+    assert campaign["event"]["payload"]["enemy_attacks"] == []
+    assert campaign["state"]["combat"]["action_available"] is False
+    assert turn(campaign, "턴 종료").status_code == 200
     assert [entry["enemy_id"] for entry in campaign["event"]["payload"]["enemy_attacks"]] == [
         "goblin_001",
         "goblin_002",

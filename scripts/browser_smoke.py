@@ -237,19 +237,40 @@ def main() -> None:
                     click("전투 시작")
                     expect(page.get_by_test_id("battlefield")).to_be_visible()
                     expect(page.get_by_label("적 상태").locator("li")).to_have_count(2)
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 3/3")
+                    click("전투 중 치유 물약")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text(
+                        "보조 행동 사용 완료"
+                    )
+                    expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 1")
                     page.set_viewport_size({"width": 390, "height": 844})
                     assert page.evaluate(
                         "document.documentElement.scrollWidth <= window.innerWidth"
                     )
                     click("방어 태세")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text(
+                        "주요 행동 사용 완료"
+                    )
                     click("이동: (0, 2)")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 2/3")
+                    click("적 차례로 넘기기")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("이동 3/3")
+                    expect(page.get_by_label("남은 전투 행동")).to_contain_text("주요 행동 1회")
                     click("전투에서 후퇴")
                     expect(page.get_by_test_id("battlefield")).to_have_count(0)
                     page.set_viewport_size({"width": 1280, "height": 900})
-                    click("여관에서 짧은 휴식")
-                    click("여관에서 긴 휴식")
+                    # 물약으로 이미 완전히 회복했다면 서버가 불필요한 휴식을 제공하지 않는다.
+                    if page.get_by_role("button", name="여관에서 짧은 휴식", exact=True).count():
+                        click("여관에서 짧은 휴식")
+                    long_rest = page.get_by_role(
+                        "button", name="여관에서 긴 휴식", exact=True
+                    ).count()
+                    if long_rest:
+                        click("여관에서 긴 휴식")
                     expect(page.get_by_text("Kael · HP 37/37", exact=True)).to_be_visible()
-                    expect(page.get_by_label("회복과 보급")).to_contain_text("야영 보급품 1")
+                    expect(page.get_by_label("회복과 보급")).to_contain_text(
+                        f"야영 보급품 {1 if long_rest else 2}"
+                    )
                     map_click(260, 155)
                     expect(page.locator(".narrative")).to_contain_text("Harlan:")
                     map_click(568, 250)
@@ -257,7 +278,7 @@ def main() -> None:
                     click("치유 물약 구매 (8골드)")
                     click("야영 보급품 구매 (3골드)")
                     expect(page.get_by_label("회복과 보급")).to_contain_text("골드 9")
-                    expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 3")
+                    expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 2")
                     map_click(48, 250)
                     expect(page.locator(".campaign-heading .eyebrow")).to_have_text("Greyhaven Inn")
 
@@ -344,7 +365,7 @@ def main() -> None:
                             click("시장으로 이동")
                         price = 6 if action == "하를란에게 봉인 반환" else 8 if exile else 10
                         click(f"치유 물약 구매 ({price}골드)")
-                        expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 4")
+                        expect(page.get_by_label("회복과 보급")).to_contain_text("치유 물약 3")
                         click("오렌과 대화")
                         page.reload()
                         expect(page.get_by_text("진행: 해결", exact=False)).to_be_visible()

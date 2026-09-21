@@ -38,12 +38,16 @@ def state():
 
 
 ATTACK = ActionProposal("basic_attack", "attack", ("goblin_001",), None, None)
+END_TURN = ActionProposal("combat_end_turn", "exploration", ("player",), None, None)
 HIDE = ActionProposal("hide_beside_door", "exploration", ("door_inn",), "stealth", "moderate")
 
 
 def test_miss_and_enemy_critical_are_recorded_without_mutating_input(state):
     before = deepcopy(state)
-    result = resolve_action(state, ATTACK, roller=Rolls(1, 20, 6, 6))
+    attacked = resolve_action(state, ATTACK, roller=Rolls(1))
+    assert attacked.state["player"]["hp"] == 31
+    assert attacked.event_payload["enemy_attacks"] == []
+    result = resolve_action(attacked.state, END_TURN, roller=Rolls(20, 6, 6))
     assert result.state["player"]["hp"] == 17
     assert result.state["combat"]["enemy_hp"] == 7
     assert result.event_payload["enemy_attack"]["damage_rolls"] == [6, 6]
@@ -65,7 +69,8 @@ def test_player_critical_ignores_ac_and_victory_stops_retaliation(state):
 
 def test_defeat_prevents_subsequent_actions(state):
     state["player"]["hp"] = 1
-    result = resolve_action(state, ATTACK, roller=Rolls(1, 19, 1))
+    attacked = resolve_action(state, ATTACK, roller=Rolls(1))
+    result = resolve_action(attacked.state, END_TURN, roller=Rolls(19, 1))
     assert result.state["player"]["hp"] == 0
     assert result.state["combat"]["result"] == "defeat"
     assert not result.state["combat"]["active"]

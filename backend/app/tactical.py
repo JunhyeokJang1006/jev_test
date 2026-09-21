@@ -5,6 +5,8 @@ from copy import deepcopy
 from typing import Any
 
 from .dice import Roller
+from .resources import DEFAULT as DEFAULT_RESOURCES
+from .resources import initialize as initialize_resources
 
 COMMANDS = {
     "전투 시작": ("start_combat", "goblin_001"),
@@ -15,6 +17,8 @@ COMMANDS = {
     "전투 이동: 왼쪽": ("combat_move", "left"),
     "전투 이동: 오른쪽": ("combat_move", "right"),
     "방어 태세": ("combat_defend", "player"),
+    "턴 종료": ("combat_end_turn", "player"),
+    "전투 중 치유 물약": ("combat_potion", "player"),
     "전투에서 후퇴": ("combat_flee", "exit"),
 }
 DIRECTIONS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
@@ -40,7 +44,11 @@ def _combat(state: dict) -> dict:
         "enemy_name": "Goblin",
         "enemy_hp": 7,
         "enemy_ac": 12,
-        "round": 0,
+        "round": 1,
+        "movement_remaining": 3,
+        "action_available": True,
+        "bonus_action_available": True,
+        "defending": False,
         "result": "ongoing",
         "player_x": 1,
         "player_y": 2,
@@ -119,6 +127,7 @@ def available_actions(state: dict) -> list[str]:
         label
         for label, (intent, target) in COMMANDS.items()
         if intent == "basic_attack"
+        and combat["action_available"]
         and any(
             enemy["id"] == target
             and enemy["hp"] > 0
@@ -128,12 +137,21 @@ def available_actions(state: dict) -> list[str]:
     ]
     occupied = _occupied(combat)
     for label, (intent, direction) in COMMANDS.items():
-        if intent == "combat_move":
+        if intent == "combat_move" and combat["movement_remaining"] > 0:
             dx, dy = DIRECTIONS[direction]
             point = (player[0] + dx, player[1] + dy)
             if _walkable(point) and point not in occupied:
                 actions.append(label)
-    actions.append("방어 태세")
+    if combat["action_available"]:
+        actions.append("방어 태세")
+    resources = state.get("resources", DEFAULT_RESOURCES)
+    if (
+        combat["bonus_action_available"]
+        and resources.get("healing_potions", 0) > 0
+        and state["player"]["hp"] < state["player"].get("max_hp", 37)
+    ):
+        actions.append("전투 중 치유 물약")
+    actions.append("턴 종료")
     if player == (0, 2):
         actions.append("전투에서 후퇴")
     return actions
@@ -228,7 +246,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
     payload: dict[str, Any] = {
         "intent": intent,
         "target_id": targets[0],
-        "rule_id": "greyhaven-tactical-v2",
+        "rule_id": "greyhaven-tactical-v3",
         "enemy_attack": None,
         "enemy_attacks": [],
     }
@@ -257,17 +275,47 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             label for label, command in COMMANDS.items() if command == (intent, targets[0])
         )
         if label not in available_actions(state):
-            raise ValueError("사거리, 장애물 또는 후퇴 위치 때문에 실행할 수 없는 행동입니다.")
+            raise ValueError(
+                "행동 예산, 자원, 사거리, 장애물 또는 후퇴 위치 때문에 실행할 수 없는 행동입니다."
+            )
         if intent == "combat_move":
             dx, dy = DIRECTIONS[targets[0]]
             combat["player_x"] += dx
             combat["player_y"] += dy
+            combat["movement_remaining"] -= 1
             narrative = "한 칸 이동했다."
+        elif intent == "combat_defend":
+            combat.update(action_available=False, defending=True)
+        elif intent == "combat_potion":
+            initialize_resources(result)
+            result["resources"]["healing_potions"] -= 1
+            combat["bonus_action_available"] = False
+            rolls = [roller.roll(4), roller.roll(4)]
+            before = result["player"]["hp"]
+            result["player"]["hp"] = min(
+                result["player"].get("max_hp", 37), before + sum(rolls) + 2
+            )
+            healing = result["player"]["hp"] - before
+            payload.update(healing=healing, healing_rolls=rolls, cost=0)
+            dice = {"outcome": "healed", "healing": healing}
+            narrative = f"치유 물약 1개를 사용해 HP {healing} 회복했다."
+        elif intent == "combat_end_turn":
+            narrative = "플레이어의 턴을 종료했다."
+            payload["enemy_attacks"] = _enemy_side_response(
+                result, roller, defend=combat["defending"]
+            )
+            combat["defending"] = False
+            if combat["active"]:
+                combat.update(
+                    movement_remaining=3, action_available=True, bonus_action_available=True
+                )
+                combat["round"] += 1
         elif intent == "combat_flee":
             combat.update(active=False, result="fled")
             result["encounter_enemy_id"] = None
             narrative = "출구로 후퇴했다. 이번 조우의 재진입은 지원하지 않는다."
         elif intent == "basic_attack":
+            combat["action_available"] = False
             enemy = next(enemy for enemy in combat["enemies"] if enemy["id"] == targets[0])
             roll = roller.roll(20)
             ac = int(enemy["ac"])
@@ -302,12 +350,8 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
             narrative = (
                 f"{enemy['name']}에게 {damage} 피해를 입혔다." if hit else "공격이 빗나갔다."
             )
-        combat["round"] += 1
-        combat["elapsed_seconds"] += 6
-        if combat["active"]:
-            payload["enemy_attacks"] = _enemy_side_response(
-                result, roller, defend=intent == "combat_defend"
-            )
+        if intent == "combat_end_turn" or combat["result"] in {"victory", "fled"}:
+            combat["elapsed_seconds"] += 6
     _sync_legacy(combat)
     responses = payload["enemy_attacks"]
     payload["enemy_attack"] = responses[0] if responses else None

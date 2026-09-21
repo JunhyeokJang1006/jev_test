@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 214 passed. 기존 회귀와 망루 원정13개·API연쇄/저장/명령6개 포함 |
+| API/AI 테스트 | PASS | pytest 228 passed. 전투 턴 예산·물약·소진 상태 저장/재송신·승리 후 탐험 복귀 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -126,6 +126,14 @@ Chrome에서 기존 세 봉인 선택→후속 사건→분기별 원정 준비�
 귀환 보고→레벨5→새로고침→원래 저장 복원을 확인했다. 모바일에서도 신규 장소를 지도 클릭으로 이동했다.
 검사 중 발견한 대문자 DC 버튼 해석 오류와 화면 폭 변경 직후 canvas 클릭 범위 문제를 수정 후 재실행했다.
 결과는 고정/혼합 버튼 경로와 mock 환경 검증이며 실제 유료 모델의 자유입력 완주 또는 30~40분 체감 평가는 아니다.
+
+전투 v3: Astra writer가 기존41개 전술 검사의 반격 시점을 명시 턴 종료로 바꾸고
+12개 예산·물약·구버전 검사를 추가했다. 루트 API 검사에서 소진한 0/false 예산 저장·복원,
+물약/턴 종료 재송신 시 RNG·자원 중복 없음, 두 적을 제압한 뒤 보상과 탐험 복귀를 확인했다.
+Sol 독립 관련84개와 전체 check 228개·Ruff·TypeScript·production build PASS.
+Chrome에서 전투 물약→주요 행동 방어→이동→명시 턴 종료·예산 회복→후퇴를 확인하고
+세 봉인/후속/망루 경로까지 다시 완주했다. 전투 물약으로 HP가 가득 차면 불필요한 여관 휴식은
+제공되지 않는 조건도 검사 흐름에 반영했다. 전체 SRD 행동·반응·개별 initiative의 완성은 아니다.
 
 ## 미실행·미구현
 

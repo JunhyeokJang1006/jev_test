@@ -67,7 +67,8 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         result["combat"] = pick(
             combat,
             "active enemy_id enemy_name enemy_hp enemy_ac round result "
-            "width height player_x player_y enemy_x enemy_y exit_x exit_y elapsed_seconds",
+            "width height player_x player_y enemy_x enemy_y exit_x exit_y elapsed_seconds "
+            "movement_remaining action_available bonus_action_available defending",
         )
         result["combat"]["initiative"] = pick(
             combat.get("initiative"),

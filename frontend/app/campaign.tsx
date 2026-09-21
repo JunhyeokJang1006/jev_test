@@ -223,7 +223,7 @@ export default function CampaignPanel() {
     </section>}
     {campaign?.state.resources && <section aria-label="회복과 보급">
       <p>골드 {campaign.state.resources.gold ?? 0} · 치유 물약 {campaign.state.resources.healing_potions ?? 0} · 야영 보급품 {campaign.state.resources.camp_supplies ?? 0} · 회복 주사위 {campaign.state.resources.hit_dice ?? 0}/2</p>
-      <p>전투 밖에서 물약: 2d4+2. 여관 짧은 휴식: 1시간·회복 주사위 1개로 1d8+2. 긴 휴식: 8시간·보급품 1개로 완전 회복.</p>
+      <p>물약: 2d4+2 회복, 전투 중에는 보조 행동 1회. 여관 짧은 휴식: 1시간·회복 주사위 1개로 1d8+2. 긴 휴식: 8시간·보급품 1개로 완전 회복.</p>
     </section>}
     {campaign?.state.quest && <div aria-label="퀘스트">
       <h3>{campaign.state.quest.title}</h3>
