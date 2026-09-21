@@ -137,6 +137,68 @@ def verify_turn_recovery(browser) -> None:
     context.close()
 
 
+def verify_narration_recovery(browser) -> None:
+    """Inject stale UI status; recovery calls the real idempotent mock-server endpoint."""
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto("http://127.0.0.1:3000")
+    send = page.get_by_role("button", name="행동 보내기", exact=True)
+    expect(send).to_be_enabled()
+    send.click()
+    expect(send).to_be_enabled()
+    campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+    campaign_url = f"http://127.0.0.1:8000/api/campaign/{campaign_id}"
+    committed = httpx.get(campaign_url).json()
+    repair_url = f"{campaign_url}/turn/{committed['latest_turn']['turn_id']}/narration"
+
+    def stale_status(status):
+        def intercept(route):
+            body = json.loads(json.dumps(committed))
+            body["latest_turn"]["narrative_status"] = status
+            route.fulfill(status=200, json=body)
+
+        page.route(campaign_url, intercept)
+        page.reload()
+        expect(page.get_by_role("button", name="서사만 다시 생성", exact=True)).to_be_enabled()
+        page.unroute(campaign_url, intercept)
+
+    stale_status("pending")
+    page.get_by_role("button", name="서사 상태 새로고침", exact=True).click()
+    expect(page.get_by_role("region", name="서사 복구", exact=True)).to_have_count(0)
+    assert httpx.get(campaign_url).json() == committed
+
+    stale_status("failed")
+    expect(page.get_by_role("region", name="서사 복구")).to_contain_text("판정 원문")
+
+    def lose_repair_response(route):
+        assert route.fetch().status == 200
+        route.abort()
+
+    page.route(repair_url, lose_repair_response)
+    page.get_by_role("button", name="서사만 다시 생성", exact=True).click()
+    expect(page.locator(".campaign .error")).to_contain_text("서사 복구 결과를 확인하지 못했습니다")
+    assert page.evaluate("localStorage.getItem('luna-realms-turn-outbox')") is None
+    assert httpx.get(campaign_url).json() == committed
+    page.unroute(repair_url, lose_repair_response)
+
+    # A repaired old turn must never overwrite the newer campaign displayed afterward.
+    later = httpx.post(
+        "http://127.0.0.1:8000/api/game/turn",
+        json={
+            "campaign_id": campaign_id,
+            "expected_state_version": committed["state_version"],
+            "input": "하를란과 대화",
+        },
+    )
+    assert later.status_code == 200
+    latest = httpx.get(campaign_url).json()
+    page.get_by_role("button", name="서사만 다시 생성", exact=True).click()
+    expect(page.get_by_role("region", name="서사 복구", exact=True)).to_have_count(0)
+    expect(page.locator(".campaign .narrative")).to_have_text(latest["latest_turn"]["narrative"])
+    assert httpx.get(campaign_url).json() == latest
+    context.close()
+
+
 def wait_for(url: str, process: subprocess.Popen) -> None:
     deadline = time.monotonic() + 50
     while time.monotonic() < deadline:
@@ -210,6 +272,7 @@ def main() -> None:
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch(channel="chrome", headless=True)
                     verify_turn_recovery(browser)
+                    verify_narration_recovery(browser)
                     context = browser.new_context(viewport={"width": 1280, "height": 900})
                     page = context.new_page()
                     failures = []
@@ -477,6 +540,7 @@ def main() -> None:
                     "구조/문서/동시 확보·귀환 보고·레벨5 성장, "
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
+                    "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "
                     "다중 탭·저장소 실패 차단, "
                     "서버 저장 선택·브라우저 저장 초기화 후 복원, 모바일 지도 클릭, JS 오류 없음"
                 )

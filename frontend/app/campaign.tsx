@@ -128,6 +128,34 @@ export default function CampaignPanel() {
     })();
   }, []);
 
+  async function recoverNarration(retry: boolean) {
+    if (starting || !campaign?.latest_turn) return;
+    await mutate(async () => {
+      requireResolved();
+      const id = campaign.id;
+      const turnId = campaign.latest_turn!.turn_id;
+      let inProgress = false;
+      if (retry) {
+        try {
+          const response = await boundedFetch(`${apiBase}/api/campaign/${encodeURIComponent(id)}/turn/${encodeURIComponent(turnId)}/narration`, { method: "POST" });
+          const body = await response.json();
+          inProgress = response.status === 409 && body?.detail === "narration_in_progress";
+          if (!response.ok && !inProgress) throw new Error("narration_retry_failed");
+          if (response.ok && (body?.turn_id !== turnId || typeof body?.narrative !== "string")) throw new Error("invalid_narration_response");
+        } catch {
+          throw new Error("서사 복구 결과를 확인하지 못했습니다. 판정은 다시 실행되지 않습니다. 서사 상태 새로고침으로 확인해 주세요.");
+        }
+      }
+      // A later action may already exist: never replace it with the repaired historical turn.
+      const current = await fetchCampaign(id);
+      if (current.state_version < campaign.state_version) throw new Error("최신 캠페인 상태를 확인하지 못했습니다.");
+      showCampaign(current);
+      if (inProgress && current.latest_turn?.turn_id === turnId && current.latest_turn.narrative_status === "pending") {
+        setError("서사를 생성 중입니다. 잠시 후 서사 상태를 새로고침해 주세요.");
+      }
+    });
+  }
+
   async function sendTurn(action = input, confirmation?: EndingChoice, retry = false) {
     if (starting || (!retry && (!campaign || !action.trim()))) return;
     await mutate(async () => {
@@ -204,7 +232,11 @@ export default function CampaignPanel() {
     <div className="campaign-heading"><div><p className="eyebrow">{campaign?.state.location_name ?? "GREYHAVEN"}</p><h2>{campaign?.name ?? "캠페인 준비 중"}</h2></div><span>{campaign?.state.day ?? 1}일 · {campaign?.state.time ?? "21:36"}</span></div>
     {campaign && (campaign.state.combat?.active ? <Battlefield combat={campaign.state.combat} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} /> : <PixelScene state={campaign.state} actions={campaign.actions ?? []} busy={actionsBlocked} onAction={action => void sendTurn(action)} />)}
     <p className="narrative">{narrative}</p>
-    {campaign?.latest_turn?.narrative_status === "pending" && <p className="note">판정은 저장되었습니다. 서사는 아직 완료되지 않았습니다.</p>}
+    {["pending", "failed"].includes(campaign?.latest_turn?.narrative_status ?? "") && <section aria-label="서사 복구">
+      <p className="note">판정은 저장되었습니다. {campaign?.latest_turn?.narrative_status === "failed" ? "AI 서사를 만들지 못해 판정 원문을 표시합니다." : "서사는 아직 완료되지 않았습니다."} 복구해도 주사위·보상·시간은 다시 처리하지 않습니다.</p>
+      <button className="secondary" type="button" disabled={actionsBlocked} onClick={() => void recoverNarration(false)}>서사 상태 새로고침</button>
+      <button className="secondary" type="button" disabled={actionsBlocked} onClick={() => void recoverNarration(true)}>서사만 다시 생성</button>
+    </section>}
     {campaignChanged && <p className="error" role="alert">다른 탭에서 캠페인이 변경되었습니다. 새로고침해 현재 캠페인을 불러와 주세요.</p>}
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · 생존 적 {(campaign.state.combat.enemies ?? [{ hp: campaign.state.combat.enemy_hp }]).filter((enemy: { hp: number }) => enemy.hp > 0).length}명</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>

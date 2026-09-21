@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+from copy import deepcopy
 from datetime import UTC, datetime
+from time import time
 from typing import Any, Literal
 from uuid import UUID
 
@@ -13,12 +15,108 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from .ai import interpret_action, jev_route, with_narration
-from .game import resolve_action
+from .game import TurnOutcome, resolve_action
 from .projection import public_state, public_turn
 from .storage import connect, json_hash, migrate, read_campaign
 from .world import COMMANDS, available_actions, prepare
 
 router = APIRouter(prefix="/api")
+NARRATION_LEASE_SECONDS = 180
+
+
+def narration_lease() -> dict[str, Any]:
+    """프로세스 종료 후에도 회수 가능한 서사 작업 소유권."""
+    return {"token": str(uuid.uuid4()), "expires_at": time() + NARRATION_LEASE_SECONDS}
+
+
+def finish_narration(connection: sqlite3.Connection, outcome: dict[str, Any]) -> dict[str, Any]:
+    """확정된 턴으로만 서사를 생성하고, 여전히 작업 소유자일 때만 저장한다."""
+    claimed_json = json.dumps(outcome, ensure_ascii=False)
+    provider = outcome["ai"]["interpreter"]
+    resolved = TurnOutcome(
+        event_type=outcome["event"]["type"],
+        event_payload=deepcopy(outcome["event"]["payload"]),
+        state=deepcopy(outcome["state"]),
+        narrative=outcome.get("authoritative_narrative", outcome["narrative"]),
+        dice=deepcopy(outcome["dice"]),
+    )
+    try:
+        narrated, narration_provider = with_narration(
+            outcome.get("narration_input", ""), resolved, provider
+        )
+        completed = {
+            **outcome,
+            "narrative": narrated.narrative,
+            "ai": {"interpreter": provider, "narrator": narration_provider},
+            "narrative_status": (
+                "failed" if provider != "mock" and narration_provider == "mock" else "completed"
+            ),
+        }
+    except Exception:
+        completed = {**outcome, "narrative_status": "failed"}
+    completed.pop("narration_lease", None)
+    try:
+        # JSON 전체 CAS에는 lease token도 포함된다. 만료된 이전 작업은 덮어쓸 수 없다.
+        updated = connection.execute(
+            "UPDATE turns SET outcome_json = ?, status = ? WHERE id = ? AND outcome_json = ?",
+            (
+                json.dumps(completed, ensure_ascii=False),
+                "narrative_failed" if completed["narrative_status"] == "failed" else "completed",
+                outcome["turn_id"],
+                claimed_json,
+            ),
+        )
+        if updated.rowcount == 1:
+            return public_turn(completed)
+        current = connection.execute(
+            "SELECT outcome_json FROM turns WHERE id = ?", (outcome["turn_id"],)
+        ).fetchone()
+        return public_turn(json.loads(current["outcome_json"])) if current else public_turn(outcome)
+    except sqlite3.Error:
+        # 판정 commit은 보존된다. 저장하지 못한 모델 결과를 공개하지 않는다.
+        return public_turn(outcome)
+
+
+@router.post("/campaign/{campaign_id}/turn/{turn_id}/narration")
+def retry_narration(campaign_id: str, turn_id: str) -> dict[str, Any]:
+    connection = connect()
+    try:
+        migrate(connection)
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT outcome_json FROM turns WHERE id = ? AND campaign_id = ?",
+            (turn_id, campaign_id),
+        ).fetchone()
+        if row is None:
+            raise HTTPException(404, "turn_not_found")
+        outcome = json.loads(row["outcome_json"])
+        if outcome.get("narrative_status", "completed") == "completed":
+            connection.commit()
+            return public_turn(outcome)
+        if outcome.get("narrative_status") not in ("pending", "failed"):
+            raise HTTPException(409, "narration_status_not_recoverable")
+        lease = outcome.get("narration_lease") or {}
+        if lease.get("expires_at", 0) > time():
+            raise HTTPException(409, "narration_in_progress")
+        # Legacy 턴은 저장된 판정 서사를 baseline으로 사용하며 입력을 추측하지 않는다.
+        outcome.setdefault("authoritative_narrative", outcome["narrative"])
+        outcome.setdefault("narration_input", "")
+        outcome["narration_lease"] = narration_lease()
+        outcome["narrative_status"] = "pending"
+        connection.execute(
+            "UPDATE turns SET outcome_json = ?, status = ? WHERE id = ?",
+            (json.dumps(outcome, ensure_ascii=False), "committed", turn_id),
+        )
+        connection.commit()
+        return finish_narration(connection, outcome)
+    except HTTPException:
+        connection.rollback()
+        raise
+    except sqlite3.OperationalError as error:
+        connection.rollback()
+        raise HTTPException(503, "database_busy_or_unavailable") from error
+    finally:
+        connection.close()
 
 
 class CampaignCreate(BaseModel):
@@ -358,6 +456,9 @@ def play_turn(request: TurnRequest) -> dict[str, Any]:
             "actions": available_actions(resolved.state),
             "ai": {"interpreter": provider, "narrator": "mock"},
             "narrative_status": "pending",
+            "narration_input": request.input,
+            "authoritative_narrative": resolved.narrative,
+            "narration_lease": narration_lease(),
             "jev": jev,
         }
         connection.execute(
@@ -404,34 +505,7 @@ def play_turn(request: TurnRequest) -> dict[str, Any]:
         )
         connection.commit()
         # 판정은 이미 영속화됐다. 서사 오류는 확정된 턴을 되돌리지 않는다.
-        try:
-            narrated, narration_provider = with_narration(request.input, resolved, provider)
-            completed = {
-                **outcome,
-                "narrative": narrated.narrative,
-                "ai": {"interpreter": provider, "narrator": narration_provider},
-                "narrative_status": (
-                    "failed" if provider != "mock" and narration_provider == "mock" else "completed"
-                ),
-            }
-        except Exception:
-            completed = {**outcome, "narrative_status": "failed"}
-        try:
-            connection.execute(
-                "UPDATE turns SET outcome_json = ?, status = ? WHERE id = ? AND status = ?",
-                (
-                    json.dumps(completed, ensure_ascii=False),
-                    "narrative_failed"
-                    if completed["narrative_status"] == "failed"
-                    else "completed",
-                    turn_id,
-                    "committed",
-                ),
-            )
-        except sqlite3.Error:
-            # 저장 실패 시 재조회와 동일한 commit 시점의 안전한 결과를 반환한다.
-            return public_turn(outcome)
-        return public_turn(completed)
+        return finish_narration(connection, outcome)
     except HTTPException:
         connection.rollback()
         raise

@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 244 passed. 기존 회귀와 NPC 관련 기억 선택·보고 출처·비공개/타 NPC 입력 경계 포함 |
+| API/AI 테스트 | PASS | pytest 253 passed. 기존 회귀와 서사 재시도·lease 경쟁·과거 턴 상태 보존·알 수 없는 상태 거부 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -146,6 +146,20 @@ Sol 독립 재검토58개와 타 NPC 접근·비공개 수량 노출 적대 검�
 전체 check 244개·Ruff·TypeScript·production build와 Chrome 회귀 PASS.
 이 검증은 입력 선택/정보 경계이며 실모델의 사실성이나 의미 검색 품질을 증명하지 않는다.
 
+## 확정된 턴의 서사 복구
+
+2026-09-21: pending/failed 서사만 복구하는 API와 화면을 추가했다.
+원본 입력·당시 판정으로 재서술하고 기계 상태/이벤트/버전은 변경하지 않는다.
+180초 영속 lease, 만료 후 회수, 늦은 응답 CAS, 저장 실패, 완료 턴 멱등,
+다른 캠페인/알 수 없는 상태 거부를 격리 DB/mock 테스트로 검증했다.
+Sol 읽기 전용 검토에서 차단 이슈는 없었고 상태 allowlist 제안을 반영했다.
+
+Chrome에서는 오래된 pending/failed 화면 상태를 주입한 뒤 실제 완료 턴 API로
+갱신·재시도·복구 응답 유실·과거 턴 재시도 후 최신 캠페인 표시를 확인했다.
+실제 pending/failed 서버 전환과 경쟁은 백엔드 테스트로 검증한 것이며,
+유료 모델 장애를 브라우저에서 재현한 결과는 아니다. 기존 세 갈래 원정도 회귀 통과했다.
+자동 백그라운드 재생성과 전체 event replay는 아직 미구현이다.
+
 ## 미실행·미구현
 
 - Chrome 브라우저 자동화: 세 결말 실제 버튼 완주·새로고침·같은 저장 3회 복원·390px 폭 넘침 없음·JS 오류 없음 확인. 접근성 전체/시각 품질/30분 플레이 평가는 아직 미실행이다.
@@ -153,7 +167,7 @@ Sol 독립 재검토58개와 타 NPC 접근·비공개 수량 노출 적대 검�
 - GPT-5.6 Luna/JEV 유료 품질 평가: smoke는 통과했으며 장시간 품질 평가는 별도 실행. API 호출은 비용이 발생할 수 있어 자동화 테스트에서 mock으로 격리한다.
 - 공급자 설정: OpenAI GPT-5.6 Luna를 우선 사용하고 DeepSeek/mock으로 fallback한다. 자동화 테스트는 비용 방지를 위해 GM_PROVIDER=mock으로 격리한다.
 - Phaser 탐험 지도·NPC/출구 클릭: Chrome 데스크톱·모바일 클릭 검사 통과. Tiled/전술 이동·SRD/게임 에셋 반입·30분 플레이·100개 회귀는 후속 구현/검증이다.
-- GitHub Actions: 직전 `86098fb`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
+- GitHub Actions: 직전 `74d37b0`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
 
 판정: 현재 머신에서 P0~P3 mock vertical slice와 상세 계획 준비 완료.
 전체 게임은 미완성이다. [완료 추적표](completion-tracker.md)의 규칙·모험·지도·기억·장시간 플레이 검증을 계속 진행한다.
