@@ -140,6 +140,11 @@ export default function CampaignPanel() {
     <p className="narrative">{narrative}</p>
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · Goblin HP {campaign.state.combat.enemy_hp}</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>
+    {campaign?.state.progression && <section aria-label="캐릭터 성장">
+      <p>레벨 {campaign.state.progression.level} · 경험치 {campaign.state.progression.xp} / {campaign.state.progression.next_level_xp ?? "현재 성장 상한"}</p>
+      <p>공격 +{campaign.state.player.attack_bonus ?? 5} · 은신 +{campaign.state.player.stealth_bonus ?? 5} · 설득 +{campaign.state.player.persuasion_bonus ?? 3}</p>
+      <p>성장은 1시간 수련으로 최대 HP +5와 선택한 기술을 강화합니다. 전투 +1, 은신/설득 +2 중 선택하세요.</p>
+    </section>}
     {campaign?.state.resources && <section aria-label="회복과 보급">
       <p>골드 {campaign.state.resources.gold ?? 0} · 치유 물약 {campaign.state.resources.healing_potions ?? 0} · 야영 보급품 {campaign.state.resources.camp_supplies ?? 0} · 회복 주사위 {campaign.state.resources.hit_dice ?? 0}/2</p>
       <p>전투 밖에서 물약: 2d4+2. 여관 짧은 휴식: 1시간·회복 주사위 1개로 1d8+2. 긴 휴식: 8시간·보급품 1개로 완전 회복.</p>

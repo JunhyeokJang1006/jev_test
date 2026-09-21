@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, replace
 from typing import Any
 
-from . import tactical
+from . import progression, tactical
 from .dice import Dice, Roller
 from .memory import record_episode
 from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
@@ -47,6 +48,20 @@ def interpret_mock(text: str) -> ActionProposal:
 
 
 def resolve_action(
+    state: dict[str, Any], proposal: ActionProposal, *, roller: Roller | None = None
+) -> TurnOutcome:
+    outcome = _resolve_action(deepcopy(state), proposal, roller=roller)
+    gained = progression.reward(state, outcome.state)
+    if gained:
+        return replace(
+            outcome,
+            event_payload={**outcome.event_payload, "xp_gained": gained},
+            narrative=outcome.narrative + f" 경험치 {gained}을 얻었다.",
+        )
+    return outcome
+
+
+def _resolve_action(
     state: dict[str, Any], proposal: ActionProposal, *, roller: Roller | None = None
 ) -> TurnOutcome:
     roller = roller if roller is not None else Dice()

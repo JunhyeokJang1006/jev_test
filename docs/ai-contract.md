@@ -24,6 +24,10 @@ HTTP 409의 `detail.code=ending_confirmation_required`와 공개 command/ending/
 기존 저장의 누락된 attempts는 빈 이력으로 취급하되 이미 확보한 evidence는 다시 판정하지 않는다.
 정식 확보 15분, 판정 성공 2분/실패 5분, 실패 후 정식 확보 25분의 자체 시나리오 규칙이다.
 
+성장 `progression`의 공개 필드는 level/xp/next_level_xp/choices이다. 보상 중복 방지 earned 원장은
+서버 내부에만 남는다. 보상은 resolve_action의 실제 완료 전이를 확인해 같은 transaction에서 지급한다.
+선택형 성장 명령 `train`은 경험치·현재 레벨·생존·전투 상태를 서버에서 재검증한다.
+
 규칙 판정·event·state를 한 transaction으로 commit한 후 서사를 생성한다.
 commit 시점에는 기본 문장과 `narrative_status=pending`이 저장되고,
 완료 후 `completed`, 공급자 실패 후 `failed`와 안전한 기본 문장을 저장한다.

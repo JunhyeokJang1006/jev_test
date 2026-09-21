@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 135 passed. 전술 선제권·벽/사거리·방어/후퇴·승패·기존 보너스·저장·공개 context·시간 누적 확인 |
+| API/AI 테스트 | PASS | pytest 158 passed. 기존 검사와 XP 최초 지급·성장 조건/선택/상한·중복·저장 분기·공개 원장 차단 확인 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -87,6 +87,11 @@ Chrome에서는 세 후속 경로에 실제 판정을 사용하고 실패 시 �
 Chrome에서 전투 시작→방어→격자 칸 클릭→출구 후퇴→휴식→기존 세 모험 경로를 완주했다.
 390px 모바일 폭에서 전투 격자 클릭과 폭 넘침 없음도 재검증했다.
 현재는 단일 적과 간소화된 행동-적 대응 규칙이며, 전체 SRD action economy·다중 적·엄폐는 미구현이다.
+
+선택형 성장: Astra writer의 단위 검사20개와 루트 통합으로 전체158개 통과.
+Sol 독립 검사에서 관련80개 및 전체 check를 재실행해 XP 중복·성장 조건/효과·원장 비공개를 확인했다.
+Chrome 세 비전투 경로에서 XP125→설득 성장→레벨4/설득+5→새로고침 보존을 확인했다.
+경험치·성장 규칙은 자체 규칙이며 다양한 클래스 능력이나 장기 성장 콘텐츠의 완성을 뜻하지 않는다.
 
 첫 검사에서 ruff의 app 모듈 분류를 명시하도록 수정했다.
 TestClient 경로의 의존성 deprecation 경고는 httpx ASGITransport 기반 테스트로 변경하여 해소했다.

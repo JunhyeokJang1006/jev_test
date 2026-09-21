@@ -76,8 +76,14 @@ def test_followup_keeps_choice_and_restores_evidence(branch):
         campaign["state"]["world_consequences"]["tax_collection"]
         == BRANCHES[branch]["tax_collection"]
     )
-    assert campaign["actions"] == []
+    assert campaign["state"]["progression"]["xp"] == 125
+    assert len([action for action in campaign["actions"] if action.startswith("성장:")]) == 3
     assert turn(campaign, finish).status_code == 422
+    skill = {"law": "전투 숙련", "mercy": "설득의 기술", "exile": "은밀한 발걸음"}[branch]
+    assert turn(campaign, f"성장: {skill}").status_code == 200
+    assert campaign["state"]["progression"]["level"] == 4
+    assert campaign["state"]["player"]["max_hp"] == 42
+    assert campaign["actions"] == []
     connection = connect()
     state = read_campaign(connection, campaign["id"])["state"]
     connection.close()

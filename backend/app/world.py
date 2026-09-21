@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from . import followup, resources, tactical
+from . import followup, progression, resources, tactical
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -24,6 +24,7 @@ COMMANDS = {
     **followup.COMMANDS,
     **resources.COMMANDS,
     **tactical.COMMANDS,
+    **progression.COMMANDS,
     "하를란에게 시장이 보냈다고 거짓말": ("deceive_mayor", "npc_harlan"),
     "시장님이 직접 저를 보냈습니다.": ("deceive_mayor", "npc_harlan"),
     "여관으로 이동": ("travel", "greyhaven_inn"),
@@ -51,6 +52,7 @@ def prepare(state: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(state)
     initialize_knowledge(result)
     resources.initialize(result)
+    progression.initialize(result)
     result.setdefault(
         "quest",
         {
@@ -75,7 +77,7 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     if state.get("player", {}).get("hp", 0) <= 0:
         return []
     if state.get("quest", {}).get("ending"):
-        actions = followup.available_actions(state)
+        actions = [*followup.available_actions(state), *progression.available_actions(state)]
         if state.get("followup", {}).get("status") == "active":
             actions.extend(resources.available_actions(state))
             location = LOCATIONS.get(state.get("location_id"), {})
@@ -90,7 +92,12 @@ def available_actions(state: dict[str, Any]) -> list[str]:
     location = LOCATIONS.get(state.get("location_id"))
     if location is None:
         return []
-    actions = ["주변 조사", *resources.available_actions(state), *tactical.available_actions(state)]
+    actions = [
+        "주변 조사",
+        *resources.available_actions(state),
+        *tactical.available_actions(state),
+        *progression.available_actions(state),
+    ]
     for label, (intent, target) in COMMANDS.items():
         if intent == "travel" and target in location["exits"]:
             actions.append(label)
@@ -115,7 +122,7 @@ def resolve_world(
     state: dict[str, Any], intent: str, targets: tuple[str, ...], *, roller: Roller | None = None
 ) -> dict | None:
     followup_intents = {command[0] for command in followup.COMMANDS.values()}
-    resource_intents = {command[0] for command in resources.COMMANDS.values()}
+    resource_intents = {command[0] for command in resources.COMMANDS.values()} | {"train"}
     if (
         intent
         not in {"travel", "talk", "investigate", "take_seal", "finish_quest"}
@@ -143,8 +150,10 @@ def resolve_world(
     check_result = None
     resource_result = None
     if intent in resource_intents:
-        resource_result = resources.apply(
-            result, intent, target, roller if roller is not None else Dice()
+        resource_result = (
+            progression.apply(result, intent, targets)
+            if intent == "train"
+            else resources.apply(result, intent, target, roller if roller is not None else Dice())
         )
         narrative, minutes = resource_result["narrative"], resource_result["minutes"]
     elif intent == "followup_check":
@@ -302,7 +311,11 @@ def resolve_world(
         }
     )
     return {
-        "event_type": "RESOURCE_ACTION_RESOLVED" if resource_result else "WORLD_ACTION_RESOLVED",
+        "event_type": "PROGRESSION_ACTION_RESOLVED"
+        if intent == "train"
+        else "RESOURCE_ACTION_RESOLVED"
+        if resource_result
+        else "WORLD_ACTION_RESOLVED",
         "event_payload": {
             **(check_result or {}),
             "intent": intent,

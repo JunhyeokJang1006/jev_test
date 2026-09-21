@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from .progression import public_progression
 from .resources import DEFAULT
 from .tactical import normalized_combat
 
@@ -27,11 +28,13 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         "combat_seconds",
     )
     result["player"] = pick(
-        state.get("player"), "id name hp max_hp ac stealth_bonus attack_bonus damage_bonus"
+        state.get("player"),
+        "id name hp max_hp ac stealth_bonus attack_bonus damage_bonus persuasion_bonus",
     )
     result["resources"] = pick(
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
+    result["progression"] = public_progression(state)
     result["npcs"] = [pick(npc, "id name disposition") for npc in state.get("npcs", [])]
     result["nearby_object_ids"] = strings(state.get("nearby_object_ids", []))
     if "inventory" in state:
@@ -80,7 +83,7 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
         payload,
         "intent target_id enemy_id skill dc roll bonus success ac damage hit "
         "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending "
-        "healing cost reward_gold moved attacked",
+        "healing cost reward_gold moved attacked xp_gained level choice",
     )
     if "damage_rolls" in payload:
         result["damage_rolls"] = [value for value in payload["damage_rolls"] if type(value) is int]
