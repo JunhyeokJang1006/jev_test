@@ -3,7 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
-from . import expedition, followup, progression, resources, tactical, world_effects
+from . import defeat, expedition, followup, progression, resources, tactical, world_effects
 from .dice import Dice, Roller
 from .memory import initialize_knowledge, record_episode
 
@@ -23,6 +23,7 @@ LOCATIONS = {
     "watchtower": {"name": "꺼진 망루", "exits": ["eastern_gate"], "npcs": []},
 }
 COMMANDS = {
+    **defeat.COMMANDS,
     **followup.COMMANDS,
     **resources.COMMANDS,
     **tactical.COMMANDS,
@@ -81,7 +82,7 @@ def prepare(state: dict[str, Any]) -> dict[str, Any]:
 
 def available_actions(state: dict[str, Any]) -> list[str]:
     if state.get("player", {}).get("hp", 0) <= 0:
-        return []
+        return defeat.available_actions(state)
     if state.get("quest", {}).get("ending"):
         actions = [
             *followup.available_actions(state),

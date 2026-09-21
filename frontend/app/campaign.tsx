@@ -238,6 +238,14 @@ export default function CampaignPanel() {
       <button className="secondary" type="button" disabled={actionsBlocked} onClick={() => void recoverNarration(true)}>서사만 다시 생성</button>
     </section>}
     {campaignChanged && <p className="error" role="alert">다른 탭에서 캠페인이 변경되었습니다. 새로고침해 현재 캠페인을 불러와 주세요.</p>}
+    {campaign && campaign.state.player?.hp <= 0 && <section aria-label="패배 후 진행">
+      <h3>쓰러졌지만 모험은 이어집니다</h3>
+      {(campaign.actions ?? []).some(action => /^(응급 치료 받기|보급품으로 치료하기|도움을 기다리기)/.test(action)) ? <>
+        <p>아래 치료 행동을 선택하면 HP {Math.max(1, Math.floor(campaign.state.player.max_hp / 2))}로 회복합니다. 응급 치료는 10골드·1시간, 보급품 치료는 보급품 1개·4시간, 도움을 기다리면 자원 없이 8시간이 필요합니다.</p>
+        <p>시간은 실제 게임 시간에 반영됩니다. 퀘스트와 단서는 유지되지만 패배는 승리로 바뀌지 않고 경험치도 얻지 않습니다. 이전 저장에서 다시 도전할 수도 있습니다.</p>
+      </> : <p>현재 상태에서는 치료 행동이 없습니다. 이전 저장을 복원해 다시 도전할 수 있습니다.</p>}
+    </section>}
+    {campaign?.state.defeat?.status === "recovered" && <p className="note" aria-label="패배의 대가">패배 후 회복 · {campaign.state.defeat.minutes}분 경과 · 골드 {campaign.state.defeat.gold_spent} / 보급품 {campaign.state.defeat.supplies_spent} 소비. 이전 전투의 패배 기록은 유지됩니다.</p>}
     <div className="facts"><span>Kael · HP {campaign?.state.player?.hp ?? 31}/{campaign?.state.player?.max_hp ?? 37}</span><span>{campaign?.state.hidden ? "은신 중" : "노출 상태"}</span>{campaign?.state.combat?.active && <span>전투 · 생존 적 {(campaign.state.combat.enemies ?? [{ hp: campaign.state.combat.enemy_hp }]).filter((enemy: { hp: number }) => enemy.hp > 0).length}명</span>}</div>
     <p>주변 인물: {(campaign?.state.npcs ?? []).map((npc: { name: string }) => npc.name).join(", ") || "없음"}</p>
     {campaign?.state.expedition && <section aria-label="망루 원정">

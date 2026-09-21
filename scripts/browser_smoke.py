@@ -199,6 +199,70 @@ def verify_narration_recovery(browser) -> None:
     context.close()
 
 
+def verify_defeat_recovery(browser) -> None:
+    """Lose a real mock-server fight, save while down, and continue via all care choices."""
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
+    page.goto("http://127.0.0.1:3000")
+    send = page.get_by_role("button", name="행동 보내기", exact=True)
+    expect(send).to_be_enabled()
+
+    def current():
+        campaign_id = page.evaluate("localStorage.getItem('luna-realms-campaign-id')")
+        return httpx.get(f"http://127.0.0.1:8000/api/campaign/{campaign_id}").json()
+
+    page.get_by_role("button", name="전투 시작", exact=True).click()
+    expect(send).to_be_enabled()
+    for _ in range(60):
+        if current()["state"]["player"]["hp"] == 0:
+            break
+        page.get_by_role("button", name="적 차례로 넘기기", exact=True).click()
+        expect(send).to_be_enabled()
+    fallen = current()["state"]
+    assert fallen["player"]["hp"] == 0
+    assert fallen["combat"]["result"] == "defeat"
+    expect(page.get_by_role("region", name="패배 후 진행")).to_contain_text("모험은 이어집니다")
+    save = page.get_by_role("button", name="세이브", exact=True)
+    expect(save).to_be_enabled()
+    save.click()
+    expect(page.locator(".campaign .note").filter(has_text="세이브 완료")).to_be_visible()
+    snapshot = page.evaluate("localStorage.getItem('luna-realms-snapshot-id')")
+    page.reload()
+    expect(page.get_by_role("button", name="도움을 기다리기 (8시간)", exact=True)).to_be_enabled()
+
+    choices = [
+        ("도움을 기다리기 (8시간)", 480, 0, 0),
+        ("응급 치료 받기 (10골드, 1시간)", 60, 10, 0),
+        ("보급품으로 치료하기 (보급품 1개, 4시간)", 240, 0, 1),
+    ]
+    for index, (label, minutes, gold, supplies) in enumerate(choices):
+        if index:
+            page.get_by_label("저장 선택", exact=False).select_option(snapshot)
+            page.get_by_role("button", name="복원", exact=True).click()
+            expect(page.get_by_role("button", name=label, exact=True)).to_be_enabled()
+        page.get_by_role("button", name=label, exact=True).click()
+        expect(send).to_be_enabled()
+        recovered = current()["state"]
+        assert recovered["player"]["hp"] == max(1, fallen["player"]["max_hp"] // 2)
+        assert recovered["elapsed_minutes"] == fallen["elapsed_minutes"] + minutes
+        assert recovered["resources"] == {
+            **fallen["resources"],
+            "gold": fallen["resources"]["gold"] - gold,
+            "camp_supplies": fallen["resources"]["camp_supplies"] - supplies,
+        }
+        for field in ("quest", "inventory", "progression", "combat"):
+            assert recovered[field] == fallen[field]
+        expect(page.get_by_label("패배의 대가", exact=True)).to_contain_text(f"{minutes}분")
+        expect(page.get_by_role("region", name="패배 후 진행")).to_have_count(0)
+        expect(page.get_by_role("button", name="전투 시작", exact=True)).to_have_count(0)
+        page.reload()
+        expect(page.get_by_role("button", name="시장으로 이동", exact=True)).to_be_enabled()
+        page.get_by_role("button", name="시장으로 이동", exact=True).click()
+        expect(send).to_be_enabled()
+        assert current()["state"]["location_id"] == "market"
+    context.close()
+
+
 def wait_for(url: str, process: subprocess.Popen) -> None:
     deadline = time.monotonic() + 50
     while time.monotonic() < deadline:
@@ -534,6 +598,7 @@ def main() -> None:
                     if os.getenv("MAP_SCREENSHOT"):
                         page.screenshot(path=os.environ["MAP_SCREENSHOT"], full_page=True)
                     assert not failures, failures
+                    verify_defeat_recovery(browser)
                     browser.close()
                 print(
                     "브라우저 PASS: 지도 NPC/출구 클릭, 3개 선택과 후속 사건·망루 원정 완주, "
@@ -541,6 +606,7 @@ def main() -> None:
                     "새로고침, 반복 복원, "
                     "전송 전·서버 반영 후 응답 유실/오류의 동일 요청 복구, "
                     "서사 상태 갱신·복구 응답 유실·과거 턴 복구 후 최신 화면 유지, "
+                    "전투 패배·쓰러진 저장 복원·3종 치료 후 탐험 재개, "
                     "다중 탭·저장소 실패 차단, "
                     "서버 저장 선택·브라우저 저장 초기화 후 복원, 모바일 지도 클릭, JS 오류 없음"
                 )

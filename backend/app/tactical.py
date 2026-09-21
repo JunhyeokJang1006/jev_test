@@ -210,6 +210,7 @@ def _enemy_response(state: dict, actor: dict, roller: Roller, *, defend: bool = 
     )
     if state["player"]["hp"] == 0:
         combat.update(active=False, result="defeat")
+        state["defeat"] = {"status": "pending"}
     return response
 
 
@@ -366,7 +367,7 @@ def resolve(state: dict, intent: str, targets: tuple, *, roller: Roller) -> dict
     if combat["result"] == "victory":
         narrative += " 고블린이 쓰러졌다. 전투에서 승리했다."
     elif combat["result"] == "defeat":
-        narrative += " 쓰러져 더 이상 싸울 수 없다. 이전 저장을 복원할 수 있다."
+        narrative += " 쓰러져 더 이상 싸울 수 없다. 치료를 받거나 도움을 기다려 회복할 수 있다."
     result["hidden"] = False
     payload["result"] = combat["result"]
     return {

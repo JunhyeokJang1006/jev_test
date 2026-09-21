@@ -9,7 +9,7 @@
 | 의존성 재설치 | PASS | 최초 설치 후 bootstrap의 uv sync --locked, npm ci 완료. 다른 OS의 깨끗한 환경은 미검증 |
 | doctor | PASS | 도구 버전과 SQLite 3.45.1 메모리 SELECT 1 확인. 게임 저장 검증은 아님 |
 | Python 정적 검사 | PASS | ruff check와 format --check 통과 |
-| API/AI 테스트 | PASS | pytest 253 passed. 기존 회귀와 서사 재시도·lease 경쟁·과거 턴 상태 보존·알 수 없는 상태 거부 포함 |
+| API/AI 테스트 | PASS | pytest 269 passed. 기존 회귀와 패배 후 3종 치료·비용/시간·저장복원·중복 요청 보존 포함 |
 | TypeScript | PASS | next typegen + tsc --noEmit |
 | production build | PASS | Next.js 16.3.5 build 완료 |
 | 개발 서버 기동 | PASS | README의 backend/frontend 명령으로 8000/3000 기동 |
@@ -160,6 +160,21 @@ Chrome에서는 오래된 pending/failed 화면 상태를 주입한 뒤 실제 �
 유료 모델 장애를 브라우저에서 재현한 결과는 아니다. 기존 세 갈래 원정도 회귀 통과했다.
 자동 백그라운드 재생성과 전체 event replay는 아직 미구현이다.
 
+## 패배 후 모험 재개
+
+2026-09-21: 여관 고블린 전투에서 쓰러진 뒤 치료·보급품·기다리기로 회복하는
+고정 시나리오 규칙을 추가했다. 비용·시간·절반 HP 회복과 기존 퀘스트/단서/자원 보존,
+승리 XP·재치료·재전투 차단, 빈 자원과 구버전 상태, private projection,
+실제 API 전투→패배→저장/복원→회복→시장 이동을 신규16개 테스트로 검증했다.
+
+전체 269개, Ruff/TypeScript/build PASS. Sol 읽기 전용 관련91개 PASS, 차단 없음.
+Chrome 390px에서 실제 테스트 전투를 패배시키고 쓰러진 상태를 저장·새로고침·복원한 뒤
+세 치료 경로 모두 탐험을 재개했다. 회복 비용/시간과 원래 패배/퀘스트/성장 상태를 대조했다.
+기존 세 갈래 모험·서사/행동 복구·다중 탭·저장 복원 회귀도 재실행 통과했다.
+초기 신규 단위 fixture의 progression 누락과 브라우저 검사 간 전역 저장 개수 가정을
+수정/검사 순서 분리한 뒤 위 전체 검사를 재실행했다.
+모두 격리 DB/mock이며 SRD death save/부활이나 실제 모델 장시간 품질 완료가 아니다.
+
 ## 미실행·미구현
 
 - Chrome 브라우저 자동화: 세 결말 실제 버튼 완주·새로고침·같은 저장 3회 복원·390px 폭 넘침 없음·JS 오류 없음 확인. 접근성 전체/시각 품질/30분 플레이 평가는 아직 미실행이다.
@@ -167,7 +182,7 @@ Chrome에서는 오래된 pending/failed 화면 상태를 주입한 뒤 실제 �
 - GPT-5.6 Luna/JEV 유료 품질 평가: smoke는 통과했으며 장시간 품질 평가는 별도 실행. API 호출은 비용이 발생할 수 있어 자동화 테스트에서 mock으로 격리한다.
 - 공급자 설정: OpenAI GPT-5.6 Luna를 우선 사용하고 DeepSeek/mock으로 fallback한다. 자동화 테스트는 비용 방지를 위해 GM_PROVIDER=mock으로 격리한다.
 - Phaser 탐험 지도·NPC/출구 클릭: Chrome 데스크톱·모바일 클릭 검사 통과. Tiled/전술 이동·SRD/게임 에셋 반입·30분 플레이·100개 회귀는 후속 구현/검증이다.
-- GitHub Actions: 직전 `74d37b0`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
+- GitHub Actions: 직전 `0588ea7`의 원격 success 확인. Docker 실행·외부 배포·의존성 취약점/라이선스 전체 감사: 미실행.
 
 판정: 현재 머신에서 P0~P3 mock vertical slice와 상세 계획 준비 완료.
 전체 게임은 미완성이다. [완료 추적표](completion-tracker.md)의 규칙·모험·지도·기억·장시간 플레이 검증을 계속 진행한다.

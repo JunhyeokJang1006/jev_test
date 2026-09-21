@@ -36,6 +36,10 @@ def public_state(state: dict[str, Any]) -> dict[str, Any]:
         state.get("resources", DEFAULT), "gold healing_potions camp_supplies hit_dice"
     )
     result["progression"] = public_progression(state)
+    if "defeat" in state:
+        result["defeat"] = pick(
+            state["defeat"], "status method gold_spent supplies_spent minutes healing"
+        )
     if "world_effects" in state:
         result["world_effects"] = pick(state["world_effects"], "effective_at applied notice")
     if "expedition" in state:
@@ -92,7 +96,8 @@ def public_payload(payload: dict[str, Any]) -> dict[str, Any]:
         payload,
         "intent target_id enemy_id skill dc roll bonus success ac damage hit "
         "remaining_hp critical damage_bonus rule_id result resolved clue minutes ending "
-        "healing cost reward_gold moved attacked xp_gained level choice world_notice",
+        "healing cost gold_spent supplies_spent reward_gold moved attacked "
+        "xp_gained level choice world_notice",
     )
     if "damage_rolls" in payload:
         result["damage_rolls"] = [value for value in payload["damage_rolls"] if type(value) is int]

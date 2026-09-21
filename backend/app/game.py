@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Any
 
-from . import progression, tactical, world_effects
+from . import defeat, progression, tactical, world_effects
 from .dice import Dice, Roller
 from .memory import record_episode
 from .world import COMMANDS, advance_time, available_actions, prepare, resolve_world
@@ -87,8 +87,23 @@ def _resolve_action(
 ) -> TurnOutcome:
     roller = roller if roller is not None else Dice()
     next_state = dict(state)
+    if proposal.intent == "recover_defeat":
+        outcome = defeat.apply(state, proposal.target_ids)
+        advance_time(state, outcome["event_payload"]["minutes"])
+        state.setdefault("journal", []).append(
+            {
+                "action": proposal.intent,
+                "target": proposal.target_ids[0],
+                "text": outcome["narrative"],
+                "day": state["day"],
+                "time": state["time"],
+            }
+        )
+        return TurnOutcome(**outcome)
     if state.get("player", {}).get("hp", 0) <= 0:
-        raise ValueError("전투 불능 상태입니다. 이전 저장을 복원해 주세요.")
+        raise ValueError(
+            "전투 불능 상태입니다. 패배 후 회복 행동을 선택하거나 저장을 복원해 주세요."
+        )
     if state.get("quest", {}).get("ending"):
         allowed = {COMMANDS[label] for label in available_actions(state) if label in COMMANDS}
         if (
